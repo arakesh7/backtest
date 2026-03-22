@@ -26,7 +26,7 @@ class PercentSlippage:
 
 # --- Configuration ---
 broker = Broker(cash=100000) 
-broker.comission = 20 # Flat ₹20 per trade
+broker.commission = 20 # Flat ₹20 per trade
 broker.add_execution_model(SimpleExecutionModel(slippage_model=PercentSlippage()))
 
 # Using a sizer that risks only 2% of capital per trade is much safer.

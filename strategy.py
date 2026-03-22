@@ -27,15 +27,18 @@ class Strategy:
 		self.wait_for_cool_off_period = False
 		self.next_method = None  # 'on_bar' or 'on_data'
 		self.market_close_time = (datetime.strptime(self.broker.market_close_time, "%H:%M:%S") - timedelta(minutes=5)).time()
+		self.market_open_time = datetime.strptime(self.broker.market_open_time, "%H:%M:%S").time()
 	
 	def next(self, ts, data):
+		all_warmed_up = True
 		for symbol in data:
 			# Always add the latest bar to the history for each symbol.
 			self.bar_history[symbol].add(data[symbol])
 			if self.bar_history[symbol].count < self.bar_history[symbol].size:
-				#
-				print(f"warming up.. {self.bar_history[symbol].count}")
-				return
+				all_warmed_up = False  # This symbol isn't ready yet; don't exit, let others accumulate
+
+		if not all_warmed_up:
+			return
 
 		# Always call on_data. The strategy itself is responsible for
 		# checking if it has enough historical data to proceed.
@@ -119,7 +122,11 @@ class Strategy:
 
 class Intraday(Strategy):
     def is_trades_taken_today(self, ts):
-        return ts.date() in self.broker.trades_taken_dates
+        """Returns True if any trade was executed on the same date as ts."""
+        return any(
+            t.executed_at.date() == ts.date()
+            for t in self.broker.trades.values()
+        )
     
 
 class IntradayMixin:

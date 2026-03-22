@@ -24,6 +24,9 @@ class FixedRiskPercentSizer(Sizer):
         """
         Calculates the position size based on a fixed percentage of cash to risk.
         """
+        if stop_loss_price is None:
+            return 0  # Cannot calculate risk-based size without a stop loss price
+
         # Determine if the stop loss is valid for the trade direction
         if side == 'BUY':
             if entry_price <= stop_loss_price: # For long, SL must be below entry

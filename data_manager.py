@@ -1,8 +1,6 @@
 import pandas as pd
 import os
-from typing import Callable, List, Dict, Optional
-from datetime import date
-import timeit
+from typing import Dict, Optional
 
 """
 for date in dates:
@@ -21,7 +19,7 @@ class CSVDataLoader:
         file_path = os.path.join(self.data_dir, f"{symbol}.csv")
         print(f"Loading data from {file_path}")
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"No data found for date: {date}")
+            raise FileNotFoundError(f"No data found for symbol '{symbol}': {file_path}")
         cols = ['open', 'high', 'low', 'close', 'volume', 'ts']
         df = pd.read_csv(file_path, usecols=cols, parse_dates=['ts'])
         
@@ -35,8 +33,7 @@ class CSVDataLoader:
         return df
 
 
-loader = CSVDataLoader(data_dir=r'G:\backtest_data')
-# print(loader.load('ABB').head())
+
 
 class DataManager:
     def __init__(self, loader):
@@ -86,12 +83,12 @@ class DataManager:
         result = {}
         for symbol in symbols:
             idx = self._get_index_from_timestamp(symbol, ts)
-            if idx:# and len(self.data_cache[symbol]) > idx:
+            if idx is not None:  # `if idx:` would incorrectly skip index 0 (the first row)
                 result[symbol] = self.data_cache[symbol][idx]
         return result            
 
     def get_data_of_symbol(self, symbol, ts):
-        idx = self._get_index_from_timestamp(ts)
+        idx = self._get_index_from_timestamp(symbol, ts)
         if idx is not None:
             return self.data_cache[symbol][idx]
     
@@ -102,8 +99,12 @@ class DataManager:
     def _get_index_from_timestamp(self, symbol, timestamp: str) -> Optional[int]:
         """
         Get the index of the given timestamp in the data cache.
+        Returns None if the symbol was never loaded or the timestamp doesn't exist.
         """
-        return self.index_map_dict[symbol].get(timestamp, None)
+        symbol_map = self.index_map_dict.get(symbol)
+        if symbol_map is None:
+            return None
+        return symbol_map.get(timestamp, None)
         
 
 # dm = DataManager(loader)

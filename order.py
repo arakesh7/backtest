@@ -33,7 +33,7 @@ class Order:
     last_modified: str = field(default=None)  # Execution timestamp
     id: str = field(default_factory=lambda: secrets.token_hex(16))  # Unique ID for each order
     parent_id: str = field(default=None)  # Optional parent order ID. Usecd for Cover Order
-    pnl: str = field(default=None)
+    pnl: float = field(default=None)
     remaining_size: int = field(init=False)
     filled_size: int = field(default=0, init=False)
     trades: list = field(default_factory=list, init=False)
@@ -123,9 +123,9 @@ class Position:
     def update(self, size, price):
         old_size, new_size = self.size, size
     
-        if old_size == 0: #opening new position
+        if old_size == 0:  # opening a fresh position; assign price directly to avoid stale avg_price
             opened, closed = size, 0
-            self.avg_price = ((self.avg_price * old_size) + (price * new_size)) / (old_size + new_size)
+            self.avg_price = price
 
         elif self.size + size == 0:
             #existing positions are fully closed

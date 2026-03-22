@@ -100,14 +100,10 @@ class DefaultAnalyzer(Analyzer):
         returns_std = equity_df['returns'].std()
         sharpe_ratio = (equity_df['returns'].mean() / returns_std) * np.sqrt(trading_days_per_year) if returns_std != 0 else 0
 
-        # Max Drawdown
+        # Max Drawdown: percentage drop from peak equity.
+        # np.where guards against divide-by-zero if cumulative_max is ever 0.
         cumulative_max = equity_df['equity'].cummax()
-        drawdown = (equity_df['equity'] - cumulative_max) / cumulative_max
-        max_drawdown = drawdown.min() * 100
-        # Calculate drawdown as the percentage drop from the peak.
-        # The 'where' clause prevents division by zero if the peak is ever zero.
         drawdown = np.where(cumulative_max > 0, (equity_df['equity'] - cumulative_max) / cumulative_max, 0)
-        # The max drawdown is the minimum value (most negative) in the drawdown series.
         max_drawdown = np.min(drawdown) * 100
 
         return {

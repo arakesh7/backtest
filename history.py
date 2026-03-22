@@ -14,8 +14,13 @@ class BarHistory:
 
     def get(self, idx):
         if idx > 0:
-            raise IndexError("Index out of bounds")
-        
+            raise IndexError(
+                f"BarHistory uses 0 (newest) and negative indices only. Got positive index: {idx}"
+            )
+        if idx < -self.count:
+            raise IndexError(
+                f"Index {idx} is out of range for history with {self.count} bars."
+            )
         physical = self._get_physical_idx(idx)
         return self.data[physical]
 

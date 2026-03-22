@@ -118,6 +118,10 @@ class Broker:
         # Check if we are opening a NEW position to see if we have enough cash
         opened, closed, _, _ = position.pseudo_update(size, fill_price)
 
+        # Update cash based on the trade
+        trade_value = fill_size * fill_price
+        commission = self.get_commission(fill_size, fill_price)
+
         # calc commission on positions
         open_value = opened * fill_price
         close_value = closed * fill_price
@@ -130,12 +134,45 @@ class Broker:
             order.status = "REJECTED"
             return None
 
-        # Actual update to the position and finalize the trade
+        self.cash += cash_in  # reinject value of closed positons
+        self.cash -= cash_out  # deduct open positions
+
+        # if order.side == "BUY":
+        #     total_cost = trade_value + commission
+        #     if opened > 0 and total_cost > self.cash:
+        #         order.status = "REJECTED"
+        #         logger.info(f"Insufficient cash for order {order.id}.")
+        #         return None
+        #     self.cash -= total_cost
+        # else:  # side == 'SELL'
+        #     total_receive = trade_value - commission
+        #     # Note: For short selling, we should ideally check margin, but here we just credit cash
+        #     self.cash += total_receive
+
+        # Actually update the position and finalize the trade
         old_avg_price = position.avg_price
         opened, closed, new_size, new_avg_price = position.update(size, fill_price)
         realized_pnl = self._calculate_realized_pnl(
             order, old_avg_price, fill_price, closed
         )
+
+        order.add_fill()
+
+        # if fill_size >= order.remaining_size:
+        #     # Full fill of remaining portion
+        #     order.execute(price=fill_price, pnl=realized_pnl, dt=timestamp)
+        #     logger.info(
+        #         f"Order FULLY executed {order.side}: {order.id} | Size: {fill_size} | Price: {fill_price} | PnL: {realized_pnl}"
+        #     )
+        # else:
+        #     # Partial fill — keep the order alive for retry on the next bar
+        #     order.filled_size += fill_size
+        #     order.remaining_size -= fill_size
+        #     order.status = "PARTIALLY_FILLED"
+        #     order.last_modified = timestamp
+        #     logger.info(
+        #         f"Order PARTIALLY filled {order.side}: {order.id} | Filled: {fill_size} | Remaining: {order.remaining_size} | Price: {fill_price}"
+        #     )
 
         _trade = Trade(
             asset,
@@ -149,10 +186,6 @@ class Broker:
         )
         self.trades[_trade.id] = _trade
         order.add_fill(_trade)
-
-        # deduct or inject cash into the account
-        self.cash += cash_in  # reinject value of closed positons
-        self.cash -= cash_out  # deduct open positions
 
         return _trade
 

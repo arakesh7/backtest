@@ -43,7 +43,7 @@ class PercentVolumeExecutionModel(ExecutionModel):
         if max_volume <= 0:
             return None, 0
         
-        exec_size = min(order.size, max_volume)
+        exec_size = min(order.remaining_size, max_volume)
         fill_price = self.slippage_model.calculate_slippage(order, price)  # Use close price with slippage
         return fill_price, exec_size
  
