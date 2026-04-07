@@ -81,8 +81,9 @@ class Order:
     
     def add_fill(self, trade: Trade):
         self.trades.append(trade)
-        self.filled_size += trade.size
-        self.remaining_size -= trade.size
+        fill_qty = abs(trade.size)  # trade.size is negative for SELL; use absolute qty
+        self.filled_size += fill_qty
+        self.remaining_size -= fill_qty
         self.last_modified = trade.executed_at
         self.update_status()
 
