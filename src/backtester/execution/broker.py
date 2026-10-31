@@ -266,6 +266,18 @@ class Broker:
 
         curr_pos_size = position.size
 
+        # Check account solvency before entering or increasing exposure
+        if self.equity <= 0 and (
+            (order.side == "BUY" and curr_pos_size >= 0)
+            or (order.side == "SELL" and curr_pos_size <= 0)
+        ):
+            logger.warning(
+                f"Order {order.id} REJECTED: Account is insolvent (equity: {self.equity:.2f} <= 0). "
+                f"Cannot open or add to positions."
+            )
+            order.status = "REJECTED"
+            return None
+
         # Solvency & Margin Validation for BUY and SELL orders
         if order.side == "BUY":
             if curr_pos_size >= 0:
@@ -295,8 +307,9 @@ class Broker:
 
                 if flipping_qty > 0:
                     flipping_cost = flipping_qty * fill_price
-                    # Reserve for short_held is released upon cover
-                    released_reserve = short_held * position.avg_price * (1.0 + self.margin_ratio)
+                    # Reserve for short_held is released upon cover (marked to market)
+                    curr_asset_price = self.current_prices.get(order.asset, position.avg_price)
+                    released_reserve = short_held * curr_asset_price * (1.0 + self.margin_ratio)
                     est_avail_cash = (self.get_available_cash() + released_reserve) - covering_cost
                     if flipping_cost > est_avail_cash:
                         logger.warning(
@@ -430,15 +443,34 @@ class Broker:
                 return True, max(o, order.stop_price)
 
         elif order_type == "STOPLIMIT":
-            # Trigger price must be hit within the bar
-            if (order.side == "BUY" and h >= order.trigger_price) or (
-                order.side == "SELL" and l <= order.trigger_price
-            ):
-                # Then check if limit price is hit within the same bar
-                if (order.side == "BUY" and l <= order.price) or (
-                    order.side == "SELL" and h >= order.price
-                ):
+            # If already triggered on an earlier bar, it acts as a standing LIMIT order
+            if getattr(order, "is_triggered", False):
+                if order.side == "BUY" and l <= order.price:
+                    return True, min(o, order.price)
+                if order.side == "SELL" and h >= order.price:
+                    return True, max(o, order.price)
+                return False, None
+
+            # First time: check if trigger price was reached on this bar
+            triggered = False
+            if order.side == "BUY" and h >= order.trigger_price:
+                triggered = True
+            elif order.side == "SELL" and l <= order.trigger_price:
+                triggered = True
+
+            if triggered:
+                order.is_triggered = True
+                logger.info(
+                    f"Order {order.id} STOPLIMIT triggered at trigger_price {order.trigger_price}; "
+                    f"now active as standing LIMIT order at {order.price}"
+                )
+                # Check if limit price is also hit within this same bar
+                if order.side == "BUY" and l <= order.price:
                     return True, order.price
+                if order.side == "SELL" and h >= order.price:
+                    return True, order.price
+
+            return False, None
 
         else:
             logger.warning(f"Unknown order type: {order_type}")

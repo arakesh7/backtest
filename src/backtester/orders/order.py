@@ -32,6 +32,7 @@ class Order:
     parent_id: str = field(default=None)  # Optional parent order ID. Used for Cover Order
     oco_group_id: str = field(default=None)  # Optional OCO group ID for linked bracket orders
     pnl: float = field(default=None)
+    is_triggered: bool = field(default=False)
     remaining_size: int = field(init=False)
     filled_size: int = field(default=0, init=False)
     trades: list = field(default_factory=list, init=False)

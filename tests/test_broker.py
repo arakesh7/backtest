@@ -355,6 +355,110 @@ class TestBroker(unittest.TestCase):
         self.assertEqual(trades_sell[0].pnl, 90.0)
         self.assertEqual(broker.cash, 10090.0)
 
+    def test_short_reserve_marked_to_market_and_insolvency_check(self):
+        # Initial cash: 10,000, margin_ratio: 0.5
+        broker = Broker(cash=10000, margin_ratio=0.5)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:00:00")
+
+        # Short 20 shares at 100 -> cash becomes 10,000 + 2000 = 12,000
+        broker.place_order(asset="AAPL", size=20, side="SELL")
+        broker.process_orders(broker.current_ts, {"AAPL": (broker.current_ts, 100, 100, 100, 100, 1000)})
+        self.assertEqual(broker.cash, 12000)
+        # At price 100: reserve = 20 * 100 * 1.5 = 3000. Available cash = 12,000 - 3000 = 9000
+        self.assertEqual(broker.get_available_cash(), 9000.0)
+
+        # Price rallies to 200 on next bar
+        broker.current_ts = pd.Timestamp("2024-01-01 10:01:00")
+        broker.process_orders(broker.current_ts, {"AAPL": (broker.current_ts, 200, 205, 195, 200, 1000)})
+        # At price 200: reserve = 20 * 200 * 1.5 = 6000. Available cash = 12,000 - 6000 = 6000
+        self.assertEqual(broker.get_available_cash(), 6000.0)
+
+        # Price skyrockets to 500 (account equity = 12,000 - 20 * 500 = 2,000; reserve = 20 * 500 * 1.5 = 15,000 > cash)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:02:00")
+        broker.process_orders(broker.current_ts, {"AAPL": (broker.current_ts, 500, 510, 490, 500, 1000)})
+        # Available cash should clamp to 0.0
+        self.assertEqual(broker.get_available_cash(), 0.0)
+
+        # Attempt to open a new BUY order when available cash is 0 should be REJECTED
+        new_order = broker.place_order(asset="MSFT", size=5, side="BUY")
+        broker.process_orders(broker.current_ts, {"MSFT": (broker.current_ts, 100, 105, 95, 100, 1000)})
+        self.assertEqual(new_order.status, "REJECTED")
+
+        # Now price surges to 700 -> account equity = 12,000 - 20 * 700 = -2000 (insolvent)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:03:00")
+        broker.process_orders(broker.current_ts, {"AAPL": (broker.current_ts, 700, 710, 690, 700, 1000)})
+        self.assertLess(broker.equity, 0)
+        insolvent_order = broker.place_order(asset="GOOG", size=1, side="BUY")
+        broker.process_orders(broker.current_ts, {"GOOG": (broker.current_ts, 50, 55, 45, 50, 1000)})
+        self.assertEqual(insolvent_order.status, "REJECTED")
+
+    def test_stoplimit_order_execution_across_subsequent_bars(self):
+        broker = Broker(cash=10000)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:00:00")
+
+        # Place BUY STOPLIMIT: Trigger = 100, Limit = 99 (buy on pullback after 100 trigger)
+        order = broker.place_order(
+            asset="AAPL",
+            size=10,
+            side="BUY",
+            order_type="STOPLIMIT",
+            trigger_price=100.0,
+            price=99.0,
+        )
+        self.assertFalse(order.is_triggered)
+
+        # Bar 1: Price touches 100.5 (trigger breached), but low is 99.5 (limit 99 not reached)
+        # Bar 1 OHLCV: open 98.0, high 100.5, low 99.5, close 100.0
+        bar1 = {"AAPL": (broker.current_ts, 98.0, 100.5, 99.5, 100.0, 1000)}
+        trades1 = broker.process_orders(broker.current_ts, bar1)
+        self.assertEqual(len(trades1), 0)
+        self.assertTrue(order.is_triggered)
+        self.assertEqual(order.status, "CREATED")
+
+        # Bar 2: Price opens at 99.2, high 99.4, low 98.8, close 99.0
+        # Notice: Bar 2 never reaches trigger 100.0! But order is already triggered, so it acts as LIMIT at 99.0
+        broker.current_ts = pd.Timestamp("2024-01-01 10:01:00")
+        bar2 = {"AAPL": (broker.current_ts, 99.2, 99.4, 98.8, 99.0, 1000)}
+        trades2 = broker.process_orders(broker.current_ts, bar2)
+        self.assertEqual(len(trades2), 1)
+        self.assertEqual(order.status, "EXECUTED")
+        self.assertEqual(trades2[0].price, 99.0)
+        self.assertEqual(broker.get_position("AAPL").size, 10)
+
+    def test_stoplimit_sell_order_execution_across_subsequent_bars(self):
+        broker = Broker(cash=10000)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:00:00")
+        # Buy 10 shares at 100 first
+        broker.place_order(asset="AAPL", size=10, side="BUY")
+        broker.process_orders(broker.current_ts, {"AAPL": make_bar(100)})
+
+        # Place SELL STOPLIMIT (exit order): Trigger = 95.0, Limit = 95.5 (sell on bounce after breakdown)
+        order = broker.place_order(
+            asset="AAPL",
+            size=10,
+            side="SELL",
+            order_type="STOPLIMIT",
+            trigger_price=95.0,
+            price=95.5,
+        )
+
+        # Bar 1: Price drops to 94.0 (triggers at 95.0), but high only reaches 95.2 (limit 95.5 not touched)
+        broker.current_ts = pd.Timestamp("2024-01-01 10:01:00")
+        bar1 = {"AAPL": (broker.current_ts, 95.0, 95.2, 94.0, 94.5, 1000)}
+        trades1 = broker.process_orders(broker.current_ts, bar1)
+        self.assertEqual(len(trades1), 0)
+        self.assertTrue(order.is_triggered)
+
+        # Bar 2: Price bounces: open 94.5, high 96.0, low 94.0, close 95.8
+        # High touches 96.0 >= 95.5 limit price. Order fills!
+        broker.current_ts = pd.Timestamp("2024-01-01 10:02:00")
+        bar2 = {"AAPL": (broker.current_ts, 94.5, 96.0, 94.0, 95.8, 1000)}
+        trades2 = broker.process_orders(broker.current_ts, bar2)
+        self.assertEqual(len(trades2), 1)
+        self.assertEqual(order.status, "EXECUTED")
+        self.assertEqual(trades2[0].price, 95.5)
+        self.assertEqual(broker.get_position("AAPL").size, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
