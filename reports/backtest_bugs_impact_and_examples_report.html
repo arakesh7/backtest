@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backtest Engine Audit: Flaws, Real-World Examples & Required Fixes</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-light: #64748b;
+      
+      --p0-border: #dc2626;
+      --p0-bg: #fef2f2;
+      --p0-text: #991b1b;
+      
+      --p1-border: #ea580c;
+      --p1-bg: #fff7ed;
+      --p1-text: #9a3412;
+      
+      --p2-border: #d97706;
+      --p2-bg: #fffbeb;
+      --p2-text: #92400e;
+      
+      --p3-border: #0284c7;
+      --p3-bg: #f0f9ff;
+      --p3-text: #075985;
+      
+      --code-bg: #f1f5f9;
+      --code-text: #0f172a;
+      --code-border: #e2e8f0;
+      
+      --success-bg: #f0fdf4;
+      --success-border: #86efac;
+      --success-text: #166534;
+      
+      --danger-bg: #fef2f2;
+      --danger-border: #fca5a5;
+      --danger-text: #991b1b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 3rem 1.5rem;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    /* Executive Header */
+    .doc-header {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2.25rem 2.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .doc-header h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+    .doc-header p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+    }
+    .summary-item .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--text-light);
+      margin-bottom: 0.25rem;
+    }
+    .summary-item .value {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Table of contents / Navigation */
+    .toc-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 2.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .toc-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    .toc-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 0.5rem 1.5rem;
+      list-style: none;
+    }
+    .toc-list a {
+      color: #0369a1;
+      text-decoration: none;
+      font-size: 0.88rem;
+    }
+    .toc-list a:hover {
+      text-decoration: underline;
+    }
+
+    /* Section Headings */
+    .section-title-wrap {
+      margin: 3rem 0 1.5rem 0;
+      padding-bottom: 0.75rem;
+      border-bottom: 2px solid var(--border-dark);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .section-title-wrap h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .badge-pill {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .pill-p0 { background: var(--p0-bg); color: var(--p0-text); border: 1px solid var(--p0-border); }
+    .pill-p1 { background: var(--p1-bg); color: var(--p1-text); border: 1px solid var(--p1-border); }
+    .pill-p2 { background: var(--p2-bg); color: var(--p2-text); border: 1px solid var(--p2-border); }
+    .pill-p3 { background: var(--p3-bg); color: var(--p3-text); border: 1px solid var(--p3-border); }
+
+    /* Issue Card */
+    .issue-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+    .issue-header {
+      padding: 1.25rem 1.75rem;
+      background: #fafafa;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .issue-title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+    }
+    .issue-number {
+      font-family: ui-monospace, monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-light);
+    }
+    .issue-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .issue-location {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .issue-body {
+      padding: 1.75rem;
+    }
+
+    .block-heading {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-top: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+    .block-heading:first-of-type {
+      margin-top: 0;
+    }
+
+    .desc-text {
+      color: #334155;
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      line-height: 1.55;
+    }
+
+    /* Comparison Box */
+    .example-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 0.75rem 0 1.25rem 0;
+    }
+    @media (max-width: 768px) {
+      .example-grid { grid-template-columns: 1fr; }
+    }
+    .example-box {
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+    }
+    .box-illusion {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger-text);
+    }
+    .box-reality {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: var(--success-text);
+    }
+    .box-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.4rem;
+    }
+
+    /* Solution Box */
+    .solution-box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 4px solid #0284c7;
+      border-radius: 4px;
+      padding: 1.1rem 1.25rem;
+      margin-top: 0.75rem;
+      font-size: 0.92rem;
+      color: #1e293b;
+    }
+    .solution-box strong {
+      color: #0f172a;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+      color: #0f172a;
+      overflow-x: auto;
+      margin: 0.5rem 0;
+      line-height: 1.5;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85em;
+      background: #f1f5f9;
+      padding: 0.15rem 0.35rem;
+      border-radius: 3px;
+      border: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Executive Header -->
+    <div class="doc-header">
+      <h1>Backtesting Engine Audit &amp; Engineering Remediation</h1>
+      <p class="subtitle">
+        Comprehensive forensic review of 20 computational defects, execution biases, and statistical distortions in <code>src/backtester/</code> that skew backtest curves, generate false confidence, and lead to real-world capital loss.
+      </p>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="label">Priority 0 (Immediate Blockers)</div>
+          <div class="value">4 Critical Core Inversions</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">Priority 1 (High Architecture)</div>
+          <div class="value">5 Solvency &amp; Order Defects</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">Priority 2 (Statistical Integrity)</div>
+          <div class="value">5 Metric &amp; Sizing Flaws</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">Priority 3 (Data &amp; Calendar)</div>
+          <div class="value">6 Ingestion &amp; Timezone Bugs</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <div class="toc-card">
+      <div class="toc-title">Index of Identified Defects &amp; Plain-English Fixes</div>
+      <ul class="toc-list">
+        <li><a href="#issue-1">1. Reverse-Time TA-Lib Indicators (P0)</a></li>
+        <li><a href="#issue-2">2. Polarity Trajectory Fallacy on Crash Days (P0)</a></li>
+        <li><a href="#issue-3">3. Static Cost-Basis Broker.equity (P0)</a></li>
+        <li><a href="#issue-4">4. Gross PnL Reporting &amp; Decoupled Fees (P0)</a></li>
+        <li><a href="#issue-5">5. Short Liabilities Anchored to Entry Price (P1)</a></li>
+        <li><a href="#issue-6">6. STOPLIMIT Orders Failing Across Bars (P1)</a></li>
+        <li><a href="#issue-7">7. Phantom Strategy Stop-Loss Orders (P1)</a></li>
+        <li><a href="#issue-8">8. Unreserved Capital on Multi-Order Bursts (P1)</a></li>
+        <li><a href="#issue-9">9. Silent Order Rejection Desynchronization (P1)</a></li>
+        <li><a href="#issue-10">10. Intraday Sharpe Compressed by 19.4x (P2)</a></li>
+        <li><a href="#issue-11">11. Breakeven Trades Dropped from Win Rate (P2)</a></li>
+        <li><a href="#issue-12">12. Flash -100% Drawdowns on Missing Bars (P2)</a></li>
+        <li><a href="#issue-13">13. Uncapped Sizing on Zero/Negative Funds (P2)</a></li>
+        <li><a href="#issue-14">14. Ignored Risk-Free Rate in Sharpe (P2)</a></li>
+        <li><a href="#issue-15">15. Blind UTC Shift Adding +5:30 to IST Data (P3)</a></li>
+        <li><a href="#issue-16">16. Missing Indian Exchange Trading Holidays (P3)</a></li>
+        <li><a href="#issue-17">17. Cross-Sectional Ranking Desynchronization (P3)</a></li>
+        <li><a href="#issue-18">18. 100% Limit Order Fill on Touch (P3)</a></li>
+        <li><a href="#issue-19">19. EOD Square-Off Lag &amp; Daily Frequency Blindspot (P3)</a></li>
+        <li><a href="#issue-20">20. BarHistory Boundary Wrap-Around Bug (P3)</a></li>
+      </ul>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TIER 1: P0 BLOCKERS -->
+    <!-- ========================================================================= -->
+    <div class="section-title-wrap">
+      <span class="badge-pill pill-p0">Tier 1 &bull; P0</span>
+      <h2>Immediate Blockers: Signal Inversion &amp; Phantom Profit Generators</h2>
+    </div>
+
+    <!-- Issue 1 -->
+    <div id="issue-1" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">01</span>
+          <span class="issue-title">BarHistory Slicing vs. Array Indexing Trap (Inverted TA-Lib Arrays &amp; closes[-1] Misconception)</span>
+        </div>
+        <div class="issue-location">src/backtester/data/history.py:38-40 &bull; strategies/user_strategies.py:626-628</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <strong>Direct integer indexing works as intended:</strong> When querying <code>BarHistory</code> directly with integers, the custom recency logic functions correctly: <code>bh[0]</code> gives the <strong>current bar</strong> (latest), <code>bh[-1]</code> gives the <strong>previous bar</strong> (1 bar earlier), and <code>bh[-2]</code> gives <strong>2 bars earlier</strong>.
+        </p>
+        <p class="desc-text">
+          <strong>The critical bug occurs during SLICING:</strong> When a strategy requests an array slice using <code>bars = self.bar_history[symbol][:]</code>, <code>BarHistory.__getitem__(slice)</code> returns a NumPy array ordered from <strong>newest to oldest</strong>: <code>[current, 1_bar_ago, 2_bars_ago, ..., oldest_bar]</code>. This creates two catastrophic failure points:
+        </p>
+        <ul style="margin-left: 1.5rem; margin-bottom: 1rem; color: #334155; font-size: 0.95rem; line-height: 1.6;">
+          <li>
+            <strong>1. The <code>closes[-1]</code> Tail-Indexing Trap:</strong> On a standard Python list or NumPy array, <code>arr[-1]</code> accesses the <em>last element of the array</em>. Because the slice places the oldest bar at the tail of the array, writing <code>closes = np.array(bars); current_close = closes[-1]</code> (as in <code>RsiMeanReversionStrategy</code>) does <strong>not</strong> get the previous bar—it extracts the <strong>oldest bar from 200 bars ago</strong>! The author confused <code>BarHistory</code>'s recency indexing (where <code>bh[-1]</code> is 1 bar ago) with NumPy array tail indexing (where <code>closes[-1]</code> is the oldest element).
+          </li>
+          <li>
+            <strong>2. TA-Lib Backwards Computation:</strong> Libraries like TA-Lib expect strictly chronological data (Index 0 = past, Index -1 = present). Because <code>bars[:]</code> feeds data backwards, TA-Lib computes moving averages and RSI in reverse time. Taking <code>fast_ma[-1]</code> evaluates the moving average of the oldest bars from 200 bars ago, not the current bars!
+          </li>
+        </ul>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>Stock price rallied from ₹100 to ₹140 over 20 bars. The buffer slice yields <code>[140, 138, ..., 100]</code>. The strategy calls <code>current_close = closes[-1]</code> and inspects ₹100 instead of ₹140. TA-Lib computes on this reversed list, and <code>fast_ma[-1]</code> evaluates the oldest historical bars (₹100 to ₹120). The strategy believes the stock is oversold at ₹100 and buys at the exact peak of ₹140.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In live trading, TA-Lib receives live chronological streams where the latest price is ₹140, not ₹100. The live strategy fires completely different signals at completely different times. The profitable backtest curve was a mathematical illusion created by trading on reversed historical noise.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong>
+          <ol style="margin-left: 1.25rem; line-height: 1.6;">
+            <li>Keep direct integer indexing intact: <code>bh[0]</code> remains current bar, <code>bh[-1]</code> remains 1 bar earlier.</li>
+            <li>In <code>BarHistory.__getitem__(slice)</code>, change the slice generation sequence so that <code>bh[:]</code> returns in <strong>strictly chronological order (oldest to newest)</strong>: starting at <code>(self.head - self.count + 1)</code> and stepping forward to <code>self.head</code>.</li>
+            <li>This ensures that when a NumPy array is passed to TA-Lib or sliced, <code>closes[-1]</code> is the current bar, <code>closes[0]</code> is the oldest bar, and all rolling indicators compute in standard forward chronological order.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 2 -->
+    <div id="issue-2" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">02</span>
+          <span class="issue-title">Polarity Trajectory Fallacy Awards Free Profits on Market Crash Days</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:164-190</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          When a stock's High reaches your profit target and its Low reaches your stop-loss within the same bar, the broker must decide which one was hit first. The default <code>POLARITY</code> model assumes that if a candle closed red (Close &lt; Open), the price path must have been <code>Open -> High -> Low -> Close</code>. This means on any huge selloff bar that opened, ticked up slightly, and collapsed, the broker assumes the High was touched first, automatically granting you a <strong>full take-profit win</strong> before the crash occurred.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>You hold 1,000 shares of Tata Motors at ₹1,000. Stop-Loss is ₹980 (-2%), Target is ₹1,010 (+1%). On bad earnings news, the stock opens at ₹1,000, spikes briefly to ₹1,011, and crashes to ₹920 (Close ₹930). Because Close &lt; Open, the broker assumes the target was hit first. <strong>Reported PnL: +₹10,000 Profit</strong>.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In reality, panic selling hit the open immediately. The price plunged directly through ₹980, triggering the stop-loss with slippage at ₹975. The brief uptick happened hours later during late-session short covering. <strong>Actual PnL: -₹25,000 Loss</strong>. A ₹35,000 divergence on a single trade.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Change the default execution model from <code>POLARITY</code> to <code>CONSERVATIVE</code>. In conservative mode, whenever a bar touches both the target and the stop-loss, always assume the <strong>stop-loss was hit first</strong>. This enforces institutional risk standards: a backtest should never give itself the benefit of the doubt on ambiguous intrabar data.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 3 -->
+    <div id="issue-3" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">03</span>
+          <span class="issue-title">Broker.equity Evaluates Cost Basis, Not Mark-to-Market Value</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:40 &bull; sizer.py:57</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <code>Broker.equity</code> is calculated as <code>cash + sum(pos.size * pos.avg_price)</code>. However, <code>avg_price</code> is fixed at the original purchase price (cost basis). When you buy shares, your cash decreases by the cost, and your position increases by the exact same cost. Because the formula uses entry price rather than current market price, <strong>equity remains permanently identical to initial cash while positions are open</strong>. If your holdings drop 50% or double, <code>Broker.equity</code> does not move.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>Starting with ₹10 Lakhs, you invest ₹10 Lakhs in stock. The market enters a severe 40% correction; actual portfolio value drops to ₹6 Lakhs. <code>Broker.equity</code> still calculates: Cash (0) + (Shares * Entry Price) = ₹10 Lakhs. The position sizer risks 2% of equity (₹20,000) on the next trade, believing capital is intact.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>Risking ₹20,000 on a true account value of ₹6 Lakhs is actually <strong>3.33% risk per trade</strong>. The strategy aggressively over-leverages during severe drawdowns instead of scaling down size. A series of losses compounds into account wipeout.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Mark positions to market on every bar. Update <code>Broker.equity</code> to calculate: <code>self.cash + sum(pos.size * current_bar_close)</code>. When prices fall, equity must decrease so sizers automatically scale down risk; when prices rise, equity must increase to allow compounding.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 4 -->
+    <div id="issue-4" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">04</span>
+          <span class="issue-title">Realized Trade PnL Ignores Commissions &amp; Commission Model Decoupled</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:350 &bull; analyzer.py:90</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          When an exit order fills, <code>_calculate_realized_pnl</code> computes profit as <code>(exit_price - entry_price) * size</code>. It does not deduct commissions or exchange fees. The <code>Trade</code> object records 100% gross profit. The analyzer then takes every trade with PnL &gt; 0 and counts it as a winning trade. Furthermore, the <code>Commission</code> classes in <code>commission.py</code> are completely disconnected from the <code>Broker</code> class, leaving <code>Broker.commission = 0</code> by default.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>An intraday scalping strategy executes 1,000 trades per year, making an average gross gain of ₹15 per trade. Total transaction costs (brokerage, STT, exchange turnover fees, GST) are ₹35 per round trip. The backtest reports: 1,000 trades, 70% win rate, and <strong>+₹15,000 net profit</strong>.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In live trading, you paid ₹35,000 in transaction costs. Your actual net result is: ₹15,000 - ₹35,000 = <strong>-₹20,000 Loss</strong>. A losing strategy that burns money on broker fees appears highly profitable in the audit report.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Inject an active commission model into <code>Broker</code>. In <code>_calculate_realized_pnl</code>, deduct the entry commission and exit commission from the realized PnL before creating the <code>Trade</code> object. All downstream metrics (win rate, profit factor, average win/loss) must reflect net, post-cost reality.
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TIER 2: P1 HIGH -->
+    <!-- ========================================================================= -->
+    <div class="section-title-wrap">
+      <span class="badge-pill pill-p1">Tier 2 &bull; P1</span>
+      <h2>High Priority: Solvency, Margin &amp; Order Execution Defects</h2>
+    </div>
+
+    <!-- Issue 5 -->
+    <div id="issue-5" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">05</span>
+          <span class="issue-title">Short Liabilities Anchored to Entry Price (Infinite Insolvency Leverage)</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:48</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          When you short-sell, the broker reserves cash to guarantee you can buy the shares back. In <code>get_available_cash()</code>, the reserved cash is calculated as <code>abs(size) * entry_price * 1.5</code>. If the shorted stock quadruples in price, your real liability has skyrocketed, but the broker still calculates your required reserve based on the cheap initial entry price.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>You short 1,000 shares of BSE at ₹100 with ₹2 Lakhs cash. Cash becomes ₹3 Lakhs; reserve is ₹1.5 Lakhs. BSE surges 4x to ₹400 in a massive squeeze. Your real short loss is -₹3 Lakhs (net account equity is -₹1 Lakh bankrupt). The broker still calculates reserve at ₹100, reports ₹1.5 Lakhs in "free available cash", and allows opening more trades.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In real trading, the broker issues a margin call when price passes ₹150. At ₹200, the broker forcefully liquidates the account to protect against default. The account is dead, yet the backtest shows it continuing to trade and recover.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Mark short liabilities to market using the current bar's closing price: <code>short_reserve = sum(abs(pos.size) * current_price * (1.0 + margin_ratio))</code>. If required reserve exceeds total cash, set available cash to 0 and halt new positions.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 6 -->
+    <div id="issue-6" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">06</span>
+          <span class="issue-title">STOPLIMIT Orders Fail to Fill Across Subsequent Bars</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:379-389</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          A Stop-Limit order has a trigger price and a limit price. Once price touches the trigger, the order should become a regular limit order that remains active until filled. In <code>broker.py</code>, the code requires both the trigger and the limit to be satisfied on the exact same bar. If it triggers on Bar 1 but cannot fill, on Bar 2 it requires the trigger price to be breached again.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>Buy Stop-Limit with Trigger ₹500, Limit ₹502. Bar 1 triggers at ₹501, but closes at ₹500.50 without filling at the limit. On Bar 2, the stock opens at ₹501.50 and rallies to ₹510. The order should have filled at ₹501.50. Instead, because Bar 2 did not breach ₹500 from below, the order is ignored and never fills.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>On live exchanges, once triggered, the order sits on the limit book. It fills immediately on Bar 2 at ₹501.50. The backtest misses a multi-day winner that the live strategy actually captured.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Add an <code>is_triggered = True</code> flag to the <code>Order</code> object. Once the trigger price is breached, permanently set <code>is_triggered = True</code> and evaluate the order as a standard <code>LIMIT</code> order on all subsequent bars until filled or canceled.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 7 -->
+    <div id="issue-7" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">07</span>
+          <span class="issue-title">Phantom Strategy Stop-Loss Orders (Never Submitted to Broker)</span>
+        </div>
+        <div class="issue-location">strategies/user_strategies.py:132-137 &bull; strategy/base.py</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          In strategies like <code>OHLCReversalStrategy</code>, the code calls <code>self.buy(..., stop_loss_price=current_open * 0.98)</code>. In <code>Strategy.buy()</code>, this stop price is passed only to the position sizer to calculate share size. <strong>No stop-loss order is ever created in the broker</strong>, and the strategy has no code in <code>on_data</code> to monitor the price. The position trades completely unhedged.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>Strategy documentation promises: <em>"Risk Management: 2% Stop Loss"</em>. The backtest author assumes every trade has downside strictly capped at 2% by the broker.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>During a market breakdown, the stock plummets 15%. Because no stop order exists in the broker and the strategy doesn't monitor the price, the position remains open all day until the 15:25 EOD close, suffering an unhedged -15% loss.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> When <code>Strategy.buy()</code> or <code>sell()</code> receives a <code>stop_loss_price</code>, automatically submit a linked OCO stop order to the <code>Broker</code> so the broker's matching engine enforces the stop loss directly on every bar.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 8 -->
+    <div id="issue-8" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">08</span>
+          <span class="issue-title">Unreserved Capital on Multi-Order Bursts (Random Allocation by Dict Iteration)</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:248-311</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          When a multi-stock strategy generates 5 buy orders on the same bar, each order checks purchasing power against current cash. Because none of the orders have executed yet, all 5 pass the check. On the next bar, the broker processes orders one by one. The first order consumes the cash; the remaining orders are rejected. Because Python dictionary keys are iterated arbitrarily, which stock gets bought depends purely on random hashing luck.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>You have ₹1 Lakh cash. Strategy ranks Stock A as #1 (Score 9.8) and Stock E as #5 (Score 4.2). Both need ₹60,000. Due to dictionary hashing, Stock E is processed first and fills. Stock A is rejected with <code>Insufficient available cash</code>. The backtest runs with the worst stock instead of the best stock.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In institutional execution, capital is strictly allocated according to strategy ranking score. The backtest's performance is dominated by dictionary sorting luck rather than the strategy's predictive edge.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Implement pre-trade capital reservation. When an order is placed, reserve its estimated capital in an <code>unreserved_cash</code> pool so subsequent orders in the same bar size against remaining funds. Alternatively, sort pending orders by priority/score before processing.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 9 -->
+    <div id="issue-9" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">09</span>
+          <span class="issue-title">Silent Order Rejection &amp; Strategy State Desynchronization</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:258 &bull; strategy/base.py</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          When <code>strategy.buy()</code> places an order, it receives an Order in <code>CREATED</code> status. On the next bar, if the broker rejects the order due to lack of margin, the strategy is never notified. The strategy assumes it owns the position, marks <code>trade_taken = True</code>, and starts managing trailing stops for a ghost position.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>An order for Reliance is rejected by the broker. The strategy continues logging: <em>"[2024-01-02] RELIANCE: Trailing stop raised to ₹2,550"</em>. Because <code>trade_taken = True</code>, it ignores real buy signals for the rest of the week.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>The strategy's internal state machine is completely broken. It manages phantom risk on a non-existent trade and locks itself out of taking legitimate winning trades.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Add an order rejection callback: <code>strategy.on_order_rejected(order, reason)</code>. When the broker rejects an order, notify the strategy immediately so it can clear its flags and reset its internal state.
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TIER 3: P2 MEDIUM -->
+    <!-- ========================================================================= -->
+    <div class="section-title-wrap">
+      <span class="badge-pill pill-p2">Tier 3 &bull; P2</span>
+      <h2>Medium Priority: Statistical Metric Distortions &amp; Sizing Flaws</h2>
+    </div>
+
+    <!-- Issue 10 -->
+    <div id="issue-10" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">10</span>
+          <span class="issue-title">Intraday Sharpe Ratio Compressed by 19.4x on 1-Minute Data</span>
+        </div>
+        <div class="issue-location">src/backtester/analytics/analyzer.py:105-111</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          In <code>DefaultAnalyzer</code>, the Sharpe ratio is calculated by multiplying average return over standard deviation by <code>np.sqrt(252)</code>. This formula is only correct for <strong>daily</strong> returns. On 1-minute data, there are 375 bars per day, so 94,500 bars per year. The correct multiplier is $\sqrt{94,500} \approx 307.4$. Multiplying by 15.87 instead of 307.4 understates the Sharpe ratio by a factor of $\sqrt{375} \approx 19.36\times$.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>An exceptional intraday momentum strategy achieves a true annualized Sharpe ratio of <strong>2.50</strong>. The backtester prints: <code>Sharpe Ratio (Annualized): 0.13</code>. The researcher concludes the strategy has virtually zero risk-adjusted return and discards it.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>The strategy is actually an institutional-grade alpha producer, but the backtester's hardcoded daily annualization formula compressed the metric by ~20x.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Dynamically compute the annualization factor based on the backtester frequency: factor = $\sqrt{\text{bars\_per\_day} \times 252}$. For 1-minute bars, use $\sqrt{375 \times 252} \approx 307.4$. Alternatively, resample the equity curve to daily closes before calculating Sharpe.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 11 -->
+    <div id="issue-11" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">11</span>
+          <span class="issue-title">Breakeven Trades Dropped from Closed Trades (Synthetic 100% Win Rates)</span>
+        </div>
+        <div class="issue-location">src/backtester/analytics/analyzer.py:122-146</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          The analyzer filters completed trades using: <code>closing_trades = [t for t in self.trades if t.pnl != 0]</code>. Any trade that exited at breakeven (PnL = 0) is discarded. It then computes win rate as <code>winning_trades / len(closing_trades)</code>.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>A strategy executes 10 trades: 2 winning trades (+₹100 each), 0 losing trades, and 8 trades scratched at ₹0 breakeven. The analyzer drops the 8 breakeven trades and calculates: 2 wins / 2 counted trades = <strong>100% Win Rate</strong>!</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>True gross win rate is 2 / 10 = <strong>20%</strong>. Furthermore, after transaction fees of ₹20 per trade, those 8 breakeven trades were actually net losses. The strategy has an 80% loss rate in reality.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Count all closed round-trip trades in the denominator, regardless of whether PnL was positive, negative, or zero: <code>win_rate = len(winning_trades) / total_completed_trades</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 12 -->
+    <div id="issue-12" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">12</span>
+          <span class="issue-title">Missing Bars &amp; Exchange Holidays Cause Flash -100% Drawdowns</span>
+        </div>
+        <div class="issue-location">src/backtester/analytics/analyzer.py:64-70</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          On each bar, the analyzer calculates position value using: <code>sum(pos.size * data[pos.asset][4] for pos in broker.positions.values() if pos.asset in data)</code>. If a single 1-minute bar is missing from the CSV, or on an exchange holiday, <code>pos.asset in data</code> is False. The analyzer values your holdings at ₹0 for that minute.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>You hold ₹5 Lakhs of shares and ₹0 cash. At 11:30 AM, one quote is missing from the CSV. The analyzer records portfolio value as ₹0. On the next bar, it jumps back to ₹5 Lakhs. The final report permanently records: <code>"Max Drawdown (%)": -100.0%</code>.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In live trading, your positions are safely held with the broker. The reported 100% wipeout was a synthetic artifact caused by the analyzer failing to forward-fill the last known price.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Implement mark-to-market forward-filling. If an asset is missing from the current bar's market data, value the position using its <strong>last known closing price</strong> rather than treating it as zero.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 13 -->
+    <div id="issue-13" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">13</span>
+          <span class="issue-title">Uncapped Position Sizing When Available Funds Are Negative</span>
+        </div>
+        <div class="issue-location">src/backtester/orders/sizer.py:88-95</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          In <code>FixedRiskPercentSizer.get_size()</code>, the affordability safety check states: <code>if available_funds > 0: raw_size = min(raw_size, max_affordable)</code>. If available funds are zero or negative (e.g. short liabilities exceed cash), the <code>if</code> block is skipped completely, and the function returns <code>raw_size</code> without any cap!
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>An account has -₹15,000 available cash due to margin requirements. The strategy generates a buy signal with a tight stop (Risk/share = ₹5, Capital to risk = ₹20,000). The formula computes 4,000 shares (₹40 Lakhs notional). Because funds are not &gt; 0, the cap is skipped and the sizer approves the 4,000-share order.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>A position sizer should never approve trades when purchasing power is non-existent. Bypassing the cap allows massive orders to be sent to the broker while over-leveraged.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Add an immediate guard clause at the start of <code>get_size()</code>: <code>if available_funds &lt;= 0: return 0</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 14 -->
+    <div id="issue-14" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">14</span>
+          <span class="issue-title">Ignored Risk-Free Rate in Sharpe Ratio Calculation</span>
+        </div>
+        <div class="issue-location">src/backtester/analytics/analyzer.py:107</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <code>DefaultAnalyzer.__init__</code> accepts a <code>risk_free_rate</code> argument. However, in <code>get_results()</code>, the formula simply divides mean return by standard deviation without subtracting the hurdle rate.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>A strategy returns 7.5% annually in a regime where Indian Treasury Bills yield 7.0% risk-free. The backtest reports a healthy Sharpe ratio of <strong>0.85</strong>.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>Excess return over risk-free cash is only 0.5%. The true excess Sharpe ratio is only <strong>0.06</strong>. The strategy takes equity market risk to deliver zero economic alpha over a risk-free bank deposit.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Convert the annual risk-free rate to a per-bar rate, subtract it from each bar's return, and calculate Sharpe on the resulting excess returns series.
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TIER 4: P3 OPERATIONAL -->
+    <!-- ========================================================================= -->
+    <div class="section-title-wrap">
+      <span class="badge-pill pill-p3">Tier 4 &bull; P3</span>
+      <h2>Operational: Timezone Shifts, Calendar &amp; Ingestion Bugs</h2>
+    </div>
+
+    <!-- Issue 15 -->
+    <div id="issue-15" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">15</span>
+          <span class="issue-title">Blind UTC Localization Shifts Local IST Data by +5:30 Hours</span>
+        </div>
+        <div class="issue-location">src/backtester/data/loader.py:26-31</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          In <code>CSVDataLoader.load()</code>, if timestamps lack timezone info, the code assumes they are UTC and converts them to <code>Asia/Kolkata</code>. But Indian data feeds (Zerodha, TrueData, Upstox) already store timestamps in IST! Converting them adds an extra 5 hours and 30 minutes to all timestamps.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>A 09:15:00 market opening bar becomes 14:45:00. The trading calendar ends the day at 15:30:00. The backtester only matches 45 minutes of trading data per day (14:45 to 15:30), discarding 5 hours and 15 minutes of market data.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>Live trading operates across all 375 minutes of the session, encountering opening volatility that was completely absent from the backtest.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Add a parameter <code>source_tz=None</code>. If the input data is already in local exchange time (IST), do not apply timezone conversions.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 16 -->
+    <div id="issue-16" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">16</span>
+          <span class="issue-title">Missing Indian Exchange Trading Holidays in Calendar</span>
+        </div>
+        <div class="issue-location">src/backtester/engine/calendar.py:32-39</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <code>WorkingDayTradingCalendar</code> uses <code>pd.bdate_range()</code>, which only filters weekends. It has no list of Indian exchange holidays (Diwali, Republic Day, Independence Day, Gandhi Jayanti, etc.).
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>In 2024, there are 15 official NSE trading holidays. The engine generates 5,640 empty 1-minute bars on these days, filling them with 0% returns and diluting volatility and annualization statistics.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>Exchanges are closed; no timestamps exist. A backtest should advance directly from the pre-holiday close to the post-holiday open.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Integrate the official NSE holiday calendar to skip non-trading holidays when generating the bar index.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 17 -->
+    <div id="issue-17" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">17</span>
+          <span class="issue-title">Cross-Sectional Ranking Desynchronization Across Assets</span>
+        </div>
+        <div class="issue-location">src/backtester/data/manager.py:56-65 &bull; strategies/top_momentum_orb_strategy.py</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <code>DataManager.get_data</code> skips symbols that had no trade at timestamp <code>ts</code>. In <code>Strategy.next()</code>, <code>bar_history</code> is only updated for symbols present in <code>data</code>. Liquid stocks update every minute, while illiquid stocks skip bars.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>At 10:30 AM, Stock A has an up-to-date quote at 10:30. Illiquid Stock B last traded at 10:00. The strategy calls <code>bar_history[0]</code> on both and ranks Stock B against Stock A as if both quotes were at 10:30.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>Live rankings use current market quotes or fail due to wide spreads; ranking stale prices against fresh prices produces distorted portfolio selection.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Synchronize multi-symbol data streams so that cross-sectional ranking models only compare quotes from identical timestamps.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 18 -->
+    <div id="issue-18" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">18</span>
+          <span class="issue-title">100% Limit Order Fill Rate on Price Extremes (Touch Fills)</span>
+        </div>
+        <div class="issue-location">src/backtester/execution/broker.py:363-368</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          A Limit Buy fills whenever <code>low &lt;= order.price</code>. If the bar Low merely touches the limit price with tiny volume, the broker assumes your entire order executed.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>You place a limit buy for 5,000 shares at ₹500.00. The bar low touches ₹500.00 (only 10 shares traded on the exchange) before rebounding to ₹520. Backtester fills all 5,000 shares, generating <strong>+₹100,000 profit</strong>.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In the real order book, you were behind 50,000 shares in the queue. You received zero fills. The live strategy missed the entire move.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Require price penetration (e.g. <code>low &lt; order.price</code>) or cap execution sizes using <code>PercentVolumeExecutionModel</code> to prevent unfillable queue-touch orders.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 19 -->
+    <div id="issue-19" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">19</span>
+          <span class="issue-title">End-of-Day (EOD) Square-Off Lag &amp; Daily Frequency Blindspot</span>
+        </div>
+        <div class="issue-location">src/backtester/strategy/base.py:46-56</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          <code>close_on_eod</code> checks <code>if ts.time() == self.market_close_time</code> (15:25:00). On daily backtests (<code>freq="D"</code>), timestamps are <code>00:00:00</code>, so this check is never true. On 1-minute backtests, orders placed at 15:25 execute on the next bar at 15:26.
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>An intraday strategy is tested on daily bars. Because <code>ts.time() == 15:25:00</code> is never met, positions are held overnight across multi-day swings, appearing as a multi-day swing strategy.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>In live trading, intraday MIS positions are forcefully squared off by the broker at 15:20. Live performance bears no relation to the backtest.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Check backtest frequency: on daily bars, execute square-off at the close of the daily bar. On intraday bars, execute market-on-close (MOC) at the bar's close price.
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue 20 -->
+    <div id="issue-20" class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-group">
+          <span class="issue-number">20</span>
+          <span class="issue-title">BarHistory Boundary Wrap-Around on get(-self.count)</span>
+        </div>
+        <div class="issue-location">src/backtester/data/history.py:16-26</div>
+      </div>
+      <div class="issue-body">
+        <div class="block-heading">What is happening (Plain English)</div>
+        <p class="desc-text">
+          In <code>BarHistory.get(idx)</code>, the guard check is <code>if idx &lt; -self.count: raise IndexError</code>. When the buffer is full (<code>count == 120</code>), calling <code>get(-120)</code> passes because <code>-120 &lt; -120</code> is False. The modulo math <code>(head - 120) % 120</code> evaluates to <code>head</code>, silently returning the <strong>newest bar</strong> instead of the oldest!
+        </p>
+
+        <div class="example-grid">
+          <div class="example-box box-illusion">
+            <div class="box-title">Backtest Illusion</div>
+            <p>A lookback indicator queries <code>get(-120)</code> to inspect the price 120 bars ago. It gets the current price instead, dividing <code>(current - current) = 0</code>, suppressing momentum signals.</p>
+          </div>
+          <div class="example-box box-reality">
+            <div class="box-title">Live Trading Reality</div>
+            <p>The calculation is mathematically corrupted due to circular buffer wrap-around.</p>
+          </div>
+        </div>
+
+        <div class="block-heading">Required Fix &amp; Plain English Logic</div>
+        <div class="solution-box">
+          <strong>The Fix:</strong> Update the index guard: <code>if idx &lt; -self.count + 1: raise IndexError</code> so querying beyond the valid window raises an error rather than wrapping to the head.
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center; color: var(--text-light); font-size: 0.85rem;">
+      Quantitative Backtest Engine Architectural Audit &bull; Plain-English Engineering Remediation Specifications
+    </footer>
+
+  </div>
+</body>
+</html>

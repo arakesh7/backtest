@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Institutional Quant Architecture Audit — Core Backtest Engine</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --card-hover: #1e293b;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-bright: #ffffff;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --danger: #f43f5e;
+      --danger-bg: rgba(244, 63, 94, 0.12);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.12);
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --code-bg: #030712;
+      --border: #374151;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2.5rem 1.5rem;
+    }
+    .container { max-width: 1280px; margin: 0 auto; }
+
+    header {
+      background: linear-gradient(180deg, #111827 0%, rgba(17, 24, 39, 0.6) 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      padding: 2.5rem;
+      margin-bottom: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, #f43f5e, #f59e0b, #38bdf8, #10b981);
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .title-group h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: var(--text-bright);
+      letter-spacing: -0.025em;
+    }
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-top: 0.35rem;
+    }
+    .badge-group { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .badge {
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .badge-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning); }
+    .badge-info { background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent); }
+    .badge-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+
+    .header-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--card-border);
+      margin-top: 1.5rem;
+    }
+    .meta-item .label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .meta-item .val { font-size: 0.95rem; color: var(--text-bright); font-weight: 600; margin-top: 0.2rem; }
+
+    /* Executive Callout */
+    .executive-alert {
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      border-left: 5px solid var(--danger);
+      padding: 1.5rem;
+      border-radius: 0.5rem;
+      margin-bottom: 2.5rem;
+    }
+    .executive-alert h3 { color: var(--danger); font-size: 1.15rem; margin-bottom: 0.5rem; font-weight: 700; }
+    .executive-alert p { color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      position: relative;
+    }
+    .stat-card .num { font-size: 2.25rem; font-weight: 800; color: var(--text-bright); }
+    .stat-card .num.danger { color: var(--danger); }
+    .stat-card .num.warning { color: var(--warning); }
+    .stat-card .num.info { color: var(--accent); }
+    .stat-card .stat-label { font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-top: 0.25rem; }
+    .stat-card .stat-desc { font-size: 0.82rem; color: #64748b; margin-top: 0.5rem; }
+
+    /* Section Styling */
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--text-bright);
+      margin: 2.5rem 0 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .section-title .indicator {
+      width: 8px;
+      height: 24px;
+      border-radius: 4px;
+    }
+    .indicator-danger { background: var(--danger); }
+    .indicator-warning { background: var(--warning); }
+    .indicator-info { background: var(--accent); }
+
+    /* Discrepancy Card */
+    .issue-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.85rem;
+      margin-bottom: 1.75rem;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    .issue-header {
+      padding: 1.25rem 1.5rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .issue-title-wrap { display: flex; align-items: center; gap: 0.85rem; }
+    .issue-id {
+      background: #1f2937;
+      color: #94a3b8;
+      font-family: monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.4rem;
+      border: 1px solid #374151;
+    }
+    .issue-name { font-size: 1.15rem; font-weight: 700; color: var(--text-bright); }
+    .issue-body { padding: 1.5rem; }
+    
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 900px) { .grid-2col { grid-template-columns: 1fr; } }
+
+    .desc-box {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 0.5rem;
+      padding: 1.2rem;
+    }
+    .desc-box h4 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .desc-box h4.danger-text { color: var(--danger); }
+    .desc-box h4.warning-text { color: var(--warning); }
+    .desc-box h4.accent-text { color: var(--accent); }
+    .desc-box p, .desc-box ul { font-size: 0.92rem; color: #cbd5e1; line-height: 1.6; }
+    .desc-box ul { padding-left: 1.25rem; margin-top: 0.4rem; }
+    .desc-box li { margin-bottom: 0.35rem; }
+
+    /* Code Snippets */
+    .code-container {
+      margin-top: 1rem;
+      background: var(--code-bg);
+      border: 1px solid #1f2937;
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    .code-header {
+      background: #111827;
+      padding: 0.5rem 1rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      justify-content: space-between;
+    }
+    pre {
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Fira Code", monospace;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+    .kw { color: #f43f5e; font-weight: 600; }
+    .fn { color: #38bdf8; }
+    .str { color: #34d399; }
+    .num { color: #fbbf24; }
+    .com { color: #64748b; font-style: italic; }
+    .highlight-err { background: rgba(244, 63, 94, 0.25); display: inline-block; width: 100%; border-left: 3px solid var(--danger); padding-left: 4px; }
+    .highlight-fix { background: rgba(16, 185, 129, 0.2); display: inline-block; width: 100%; border-left: 3px solid var(--success); padding-left: 4px; }
+
+    /* Real World Failure Scenario */
+    .scenario-box {
+      margin-top: 1.25rem;
+      background: linear-gradient(145deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6));
+      border: 1px dashed #334155;
+      border-radius: 0.5rem;
+      padding: 1.2rem;
+    }
+    .scenario-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: #cbd5e1;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .scenario-box p { font-size: 0.9rem; color: #94a3b8; line-height: 1.6; }
+
+    /* Roadmap Table */
+    .table-container {
+      overflow-x: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      margin-bottom: 3rem;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th {
+      background: #1e293b;
+      padding: 1rem 1.25rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      border-bottom: 1px solid var(--card-border);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--card-border);
+      color: #cbd5e1;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    footer {
+      text-align: center;
+      padding: 2.5rem 0;
+      color: #64748b;
+      font-size: 0.85rem;
+      border-top: 1px solid var(--card-border);
+      margin-top: 3rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- HEADER -->
+    <header>
+      <div class="header-top">
+        <div class="title-group">
+          <h1>Institutional Quant Architecture Audit</h1>
+          <p>Core Backtesting Engine Reliability, Solvency Tracking & Capital Risk Assessment</p>
+        </div>
+        <div class="badge-group">
+          <span class="badge badge-danger">Deploy Status: High Risk</span>
+          <span class="badge badge-warning">Target: Bank Quant Subdivision</span>
+          <span class="badge badge-info">Pass: Deep Engine Inspection</span>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="meta-item">
+          <div class="label">Audited Scope</div>
+          <div class="val">Core Components Only (Zero Strategy Bias)</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Primary Vulnerability</div>
+          <div class="val">Unconstrained Shorting & Dynamic Universe Orphanage</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Statistical Distortion</div>
+          <div class="val">Intraday Sharpe Deflation (19.36x Error)</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Repository Location</div>
+          <div class="val"><code>C:\Users\Rakesh\backtest</code></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- EXECUTIVE ALERT -->
+    <div class="executive-alert">
+      <h3>Institutional Deployment Warning: High Capital Risk</h3>
+      <p>
+        In institutional quantitative finance, <strong>false-positive backtests are substantially more hazardous than failing backtests</strong>. A strategy with poor logic simply fails during research. A strategy whose backtest yields artificially elevated Sharpe ratios, zero-slippage fills, unconstrained free leverage, or hidden survival biases will be approved by Risk Committees, funded with institutional capital, and incur catastrophic drawdowns in production.
+      </p>
+    </div>
+
+    <!-- STATS DASHBOARD -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="num danger">3</div>
+        <div class="stat-label">Critical Solvency Bugs</div>
+        <div class="stat-desc">Phantom cash on shorts, missing margin, active position cache eviction.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num warning">2</div>
+        <div class="stat-label">Execution Biases</div>
+        <div class="stat-desc">Zero slippage default, infinite volume liquidity, queue-jumping limit fills.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num info">2</div>
+        <div class="stat-label">Statistical Distortions</div>
+        <div class="stat-desc">Sharpe 19.36x under-annualization on 1-min data, breakeven trade filtering.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">100%</div>
+        <div class="stat-label">Code Integrity Focus</div>
+        <div class="stat-desc">Audited exclusively on engine pipelines, broker state, and math libraries.</div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: CAPITAL & MARGIN -->
+    <div class="section-title">
+      <div class="indicator indicator-danger"></div>
+      Category 1: Capital, Margin & Cash-Flow Discrepancies (The "Phantom Capital" Trap)
+    </div>
+
+    <!-- ISSUE 1 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">CRIT-01</span>
+          <span class="issue-name">Unconstrained Short Selling & Artificial Cash Generation</span>
+        </div>
+        <span class="badge badge-danger">Critical Solvency Flaw</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/broker.py#L119-L151"><code>broker.py</code></a> (lines 119-151), fund availability checks exist <strong>only for BUY orders</strong>. When a strategy executes a <code>SELL</code> order to initiate a short position:
+            </p>
+            <ul>
+              <li>Zero cash or margin checks are performed.</li>
+              <li>The broker credits raw cash directly: <code>self.cash += (fill_size * fill_price) - commission</code>.</li>
+              <li>No initial margin (e.g. 50% Reg T or 20% span) is escrowed.</li>
+              <li>No maintenance margin or short borrow interest is charged.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              An account with $1,000 can short-sell $10,000,000 worth of stock. The backtester immediately inflates <code>self.cash</code> to $10,001,000! 
+              The strategy is then permitted to deploy this phantom cash to purchase $10M worth of long assets.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              Any Long/Short equity, statistical arbitrage, or market-neutral strategy tested on this engine will operate with <strong>infinite unconstrained leverage</strong>.
+            </p>
+          </div>
+        </div>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>broker.py — Lines 119–151</span>
+            <span>Unchecked Short Proceeds</span>
+          </div>
+          <pre><code><span class="com"># broker.py line 120: Funds checked ONLY for BUY orders</span>
+<span class="kw">if</span> order.side == <span class="str">"BUY"</span>:
+    cost = (fill_size * fill_price) + commission
+    <span class="kw">if</span> cost > self.cash:
+        order.status = <span class="str">"REJECTED"</span>
+        <span class="kw">return None</span>
+
+<span class="com"># broker.py line 147: SELL order unconditionally adds unencumbered cash</span>
+<span class="kw">if</span> order.side == <span class="str">"BUY"</span>:
+    self.cash -= (fill_size * fill_price) + commission
+<span class="kw">else</span>:  <span class="com"># SELL (both long exit AND short initiation!)</span>
+<span class="highlight-err">    self.cash += (fill_size * fill_price) - commission  <span class="com"># &lt;-- Free cash injection without margin</span></span></code></pre>
+        </div>
+
+        <div class="scenario-box">
+          <div class="scenario-title">Real-World Banking Failure Scenario</div>
+          <p>
+            A quant modeller builds an equity pairs trading strategy with $5,000,000 seed allocation. In the backtest, whenever the spread widens, the model shorts 100,000 shares of an overpriced stock, receiving $20M in cash, and buys the underpriced pair. The backtest reports a flawless Sharpe 3.2. When deployed live, Prime Brokerage rejects the short order due to margin requirements (or issues an intraday margin call during adverse mark-to-market), forcing liquidations and generating catastrophic losses.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 2 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">CRIT-02</span>
+          <span class="issue-name">Fixed Risk Sizer Inverts Risk Formula & Sizes on Depleting Cash</span>
+        </div>
+        <span class="badge badge-danger">Critical Risk Flaw</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/sizer.py#L48-L49"><code>sizer.py</code></a> (lines 48-49), <code>FixedRiskPercentSizer</code> ignores its own <code>stop_loss_price</code> parameter:
+            </p>
+            <ul>
+              <li>Formula used: <code>int(cash_to_risk / entry_price)</code>.</li>
+              <li>This is <strong>Capital Allocation</strong> (allocating 1% of cash), NOT <strong>Risk Sizing</strong>!</li>
+              <li>Institutional Risk Sizing requires sizing according to stop distance: <code>cash_to_risk / abs(entry_price - stop_loss_price)</code>.</li>
+              <li>Sizes against <code>broker.cash</code> rather than <strong>Total Portfolio NAV</strong>.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              If a modeller specifies a 1% portfolio risk with a tight $0.50 stop on a $100 stock (0.5% price risk), the sizer severely undersizes the trade.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              Conversely, if the stop is $50 (50% price risk), the sizer buys the exact same number of shares, taking on <strong>100x more tail risk</strong> than configured! As cash is deployed, bet sizes decay exponentially.
+            </p>
+          </div>
+        </div>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>sizer.py — Lines 48–49</span>
+            <span>Stop-Loss Price Ignored</span>
+          </div>
+          <pre><code><span class="kw">class</span> <span class="fn">FixedRiskPercentSizer</span>(Sizer):
+    <span class="kw">def</span> <span class="fn">get_size</span>(self, broker, asset, entry_price, stop_loss_price, side, **kwargs):
+        cash_to_risk = broker.cash * (self.risk_percent / <span class="num">100</span>)
+<span class="highlight-err">        <span class="kw">return</span> int(cash_to_risk / entry_price)  <span class="com"># &lt;-- Divides by price, NOT risk per share!</span></span>
+
+<span class="com"># Institutional Standard Fix:</span>
+<span class="highlight-fix">        risk_per_share = abs(entry_price - stop_loss_price)</span>
+<span class="highlight-fix">        portfolio_equity = broker.cash + sum(p.size * last_close for p in broker.positions.values())</span>
+<span class="highlight-fix">        <span class="kw">return</span> int((portfolio_equity * (self.risk_percent / 100)) / risk_per_share)</span></code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: DYNAMIC UNIVERSE & DATA INTEGRITY -->
+    <div class="section-title">
+      <div class="indicator indicator-danger"></div>
+      Category 2: Dynamic Universe & Liquidity Discontinuities (The "Orphan Position" Trap)
+    </div>
+
+    <!-- ISSUE 3 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">CRIT-03</span>
+          <span class="issue-name">Dynamic Universe Cache Eviction Creates Zombie Positions</span>
+        </div>
+        <span class="badge badge-danger">Critical Engine Trap</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/data_manager.py#L58-L68"><code>data_manager.py</code></a> (lines 58-68) and <a href="file:///C:/Users/Rakesh/backtest/backtester.py#L68-L75"><code>backtester.py</code></a> (lines 68-75):
+            </p>
+            <ul>
+              <li>When the universe is refreshed via <code>universe_fn(ts)</code>, any symbol not in <code>new_universe</code> is <strong>evicted from cache</strong>: <code>self.clear_cache(symbols_to_evict)</code>.</li>
+              <li>On subsequent bars, <code>data_manager.get_data(self.current_universe, ts)</code> queries only the new universe.</li>
+              <li>Data for open positions in evicted symbols is completely omitted!</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              If a rotational momentum strategy buys <code>STOCK_A</code> on Day 1, and <code>STOCK_A</code> drops out of the universe on Day 5:
+            </p>
+            <ul>
+              <li>Pending stop loss orders can <strong>never execute</strong> (<code>order.asset not in data: return None</code>).</li>
+              <li>Strategy exit orders (<code>self.close('STOCK_A')</code>) are permanently ignored.</li>
+              <li>In <a href="file:///C:/Users/Rakesh/backtest/analyzer.py#L64-L68"><code>analyzer.py</code></a>, the position's value vanishes, showing an instant 100% loss of invested capital.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>data_manager.py — Lines 58–67</span>
+            <span>Premature Cache Eviction</span>
+          </div>
+          <pre><code><span class="kw">def</span> <span class="fn">load_data</span>(self, symbols):
+    old_symbols = list(self.data_cache.keys())
+    symbols_to_evict = list(set(old_symbols) - set(symbols))
+<span class="highlight-err">    self.clear_cache(symbols_to_evict)  <span class="com"># &lt;-- Purges data for open positions!</span></span>
+    self._load_data(symbols)
+
+<span class="com"># Institutional Requirement: Retain symbols in Current Universe UNION Active Positions UNION Active Orders</span></code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 4 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">MAJ-01</span>
+          <span class="issue-name">Mark-to-Market Liquidity Discontinuity (Artificial Drawdown Spikes)</span>
+        </div>
+        <span class="badge badge-warning">Major Analytics Bug</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/analyzer.py#L64-L70"><code>analyzer.py</code></a> (lines 64-70):
+            </p>
+            <ul>
+              <li>Portfolio equity is marked to market using: <code>pos.size * data[pos.asset][4]</code>.</li>
+              <li>If an asset has no trades on bar <code>ts</code> (e.g. low liquidity, halt, circuit breaker), <code>pos.asset not in data</code>.</li>
+              <li>The position's valuation is completely omitted from <code>positions_value</code> for that bar!</li>
+              <li>No last-known-price (carry-forward) mechanism exists.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              For any portfolio holding illiquid equities, the equity curve suffers violent <strong>artificial flash-crashes to cash value</strong>, followed by immediate recoveries on the next tick.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              This generates spurious 50% to 90% maximum drawdown figures and destroys the calculated Sharpe ratio, leading quant teams to reject valid strategies.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: EXECUTION REALISM -->
+    <div class="section-title">
+      <div class="indicator indicator-warning"></div>
+      Category 3: Execution Realism & Microstructure Biases (The "Optimistic Fill" Trap)
+    </div>
+
+    <!-- ISSUE 5 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">MAJ-02</span>
+          <span class="issue-name">Zero-Slippage & Infinite Liquidity in Default Execution Model</span>
+        </div>
+        <span class="badge badge-warning">Major Microstructure Bias</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/broker.py#L20"><code>broker.py</code></a> and <a href="file:///C:/Users/Rakesh/backtest/execution_model.py#L21-L29"><code>execution_model.py</code></a>:
+            </p>
+            <ul>
+              <li><code>Broker</code> instantiates <code>SimpleExecutionModel</code> with <code>DefaultSlippage</code> by default.</li>
+              <li><code>DefaultSlippage</code> returns <code>price</code> unaltered (0.00 bps slippage).</li>
+              <li><code>SimpleExecutionModel</code> returns <code>order.remaining_size</code> without checking bar volume.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              A strategy can trade $50,000,000 in a micro-cap stock on a 1-minute bar that traded only 500 shares. The entire size executes cleanly at the Open price.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              Backtests report immense statistical capacity and high Sharpe ratios. In reality, attempting to buy even 20% of the bar's volume moves market price drastically (square-root impact law), eliminating all modeled alpha.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 6 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">MAJ-03</span>
+          <span class="issue-name">Limit Order Touch Execution (Zero Queue Delay) & STOPLIMIT Pathing</span>
+        </div>
+        <span class="badge badge-warning">Major Execution Bias</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/broker.py#L182-L206"><code>broker.py</code></a>:
+            </p>
+            <ul>
+              <li><strong>Limit Orders:</strong> Filled 100% whenever <code>Low <= order.price</code> (BUY) or <code>High >= order.price</code> (SELL). Merely touching the price level assumes 100% fill priority.</li>
+              <li><strong>STOPLIMIT Orders:</strong> Checks if trigger price AND limit price fall inside the bar's high-low range, assuming the trigger occurred chronologically before the limit price was touched.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              In real exchange order books, an order placed after other participants sits at the back of the queue. If Low merely touches the limit price for 1 lot, an order for 10,000 shares would receive zero fills.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              Mean-reversion and market-making strategies that place limit orders at support/resistance levels show massive fill-rate inflation.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: PERFORMANCE METRICS -->
+    <div class="section-title">
+      <div class="indicator indicator-info"></div>
+      Category 4: Performance Analytics & Statistical Fallacies (The "Inflated Scorecard" Trap)
+    </div>
+
+    <!-- ISSUE 7 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">MAJ-04</span>
+          <span class="issue-name">Intraday Sharpe Ratio 19.36x Deflation & Breakeven Trade Stripping</span>
+        </div>
+        <span class="badge badge-info">Major Statistical Flaw</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/analyzer.py#L105-L149"><code>analyzer.py</code></a>:
+            </p>
+            <ul>
+              <li><strong>Sharpe Annualization:</strong> Multiplies per-bar returns by <code>np.sqrt(252)</code> regardless of frequency. For 1-minute bars (375 bars/day), the annualizing factor must be $\sqrt{252 \times 375} = \sqrt{94,500}$.</li>
+              <li><code>self.risk_free_rate</code> is defined in <code>__init__</code> but completely omitted from the calculation!</li>
+              <li><strong>Win Rate Calculation:</strong> Filters <code>closing_trades = [t for t in self.trades if t.pnl != 0]</code>. This strips out all trades that closed at break-even ($0 PnL)!</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              - <strong>Sharpe Ratio:</strong> An institutional intraday strategy with a true annualized Sharpe ratio of <strong>2.5</strong> will report a deflated Sharpe of <strong>0.13</strong> ($\sqrt{375} \approx 19.36\times$ deflation), causing viable alpha strategies to be discarded.
+            </p>
+            <p style="margin-top: 0.5rem;">
+              - <strong>Win Rate:</strong> If a strategy has 2 wins ($+100$), 2 losses ($-100$), and 6 breakeven exits ($0$), <code>num_close_trades</code> counts only 4. Win rate is reported as <strong>50%</strong> instead of <strong>20%</strong>!
+            </p>
+          </div>
+        </div>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>analyzer.py — Lines 107–149</span>
+            <span>Mathematical Distortions</span>
+          </div>
+          <pre><code><span class="com"># analyzer.py line 107: Hardcoded daily factor applied to intraday returns</span>
+trading_days_per_year = <span class="num">252</span>
+<span class="highlight-err">sharpe_ratio = (equity_df[<span class="str">"returns"</span>].mean() / returns_std) * np.sqrt(trading_days_per_year)  <span class="com"># Missing 19.36x scale on 1-min</span></span>
+
+<span class="com"># analyzer.py line 125: Breakeven trades discarded from denominator</span>
+<span class="highlight-err">closing_trades = [t <span class="kw">for</span> t <span class="kw">in</span> self.trades <span class="kw">if</span> t.pnl != <span class="num">0</span>]  <span class="com"># &lt;-- Discards pnl == 0 trades</span>
+win_rate = (len(winning_trades) / len(closing_trades)) * <span class="num">100</span></code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 5: FORWARD & LOOKAHEAD BIAS -->
+    <div class="section-title">
+      <div class="indicator indicator-danger"></div>
+      Category 5: Lookahead & Forward Bias Vulnerabilities (Future Data Leakage)
+    </div>
+
+    <!-- ISSUE 8 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">FWD-01</span>
+          <span class="issue-name">Intra-Bar High/Low Execution Telepathy (Dual Target & Stop Fills)</span>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <span class="badge badge-success">FIXED &amp; TESTED</span>
+          <span class="badge badge-info">Parameter: intra_bar_fill_model (Default: POLARITY)</span>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause &amp; Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/broker.py#L71-L80"><code>broker.py</code></a>:
+            </p>
+            <ul>
+              <li>When a position had both a <strong>Target Profit</strong> (LIMIT SELL at 110) and a <strong>Stop Loss</strong> (SL SELL at 90), and a volatile bar spanned <code>High=115, Low=85</code>:</li>
+              <li>The engine evaluated orders in dictionary insertion order.</li>
+              <li>If the target order was placed first, the engine filled the target at 110, and then immediately evaluated the stop-loss order on the same bar, filling it at 85 and accidentally flipping the position short!</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="accent-text">Implemented Institutional Solution</h4>
+            <p>
+              Implemented a clean, explicit parameter <code>intra_bar_fill_model="POLARITY"</code> on <code>Backtester</code> and <code>Broker</code>:
+            </p>
+            <ul>
+              <li><strong><code>"POLARITY"</code> (Default — Trajectory Modeling):</strong> Reconstructs intra-bar price sequence from candle polarity &amp; open gaps:
+                <ul>
+                  <li>Open Gap takes priority (gap down below stop triggers SL immediately at Open).</li>
+                  <li>Bullish bar (<code>Close &ge; Open</code>): Open &rarr; Low &rarr; High &rarr; Close (Low hit first &rarr; SL executes on Long).</li>
+                  <li>Bearish bar (<code>Close &lt; Open</code>): Open &rarr; High &rarr; Low &rarr; Close (High hit first &rarr; Target executes on Long).</li>
+                </ul>
+              </li>
+              <li><strong><code>"CONSERVATIVE"</code> (Prudential Risk Standard):</strong> Stop Loss is unconditionally prioritized on ambiguous bars to avoid optimistic bias.</li>
+              <li><strong>OCO Bracket Cancellation:</strong> Sibling exit order is immediately cancelled upon fill, eliminating accidental position flipping.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 9 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">FWD-02</span>
+          <span class="issue-name">STOPLIMIT Sequence Lookahead (Pre-Trigger Dip Fill)</span>
+        </div>
+        <span class="badge badge-danger">Critical Forward Bias</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/broker.py#L196-L206"><code>broker.py</code></a> (lines 196-206):
+            </p>
+            <ul>
+              <li>Checks if <code>High >= trigger_price</code> AND <code>Low <= limit_price</code> on the same bar.</li>
+              <li>If a breakout pullback order has Trigger=105 and Limit=102: if the bar opened at 100, dipped to 99, and then rallied to 106, the engine fills the order at 102.</li>
+              <li>However, the price of 102 occurred <strong>before</strong> the trigger of 105 was breached. The order was not active when 102 traded!</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              Uses future intra-bar knowledge to execute limit orders that were not yet in the exchange book when the fill price occurred, guaranteeing impossible entry prices.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 10 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">FWD-03</span>
+          <span class="issue-name">Reverse-Time History Slicing in Vectorized Indicators</span>
+        </div>
+        <span class="badge badge-warning">High Risk Lookahead Trap</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/history.py#L33-L39"><code>history.py</code></a> (lines 33-39):
+            </p>
+            <ul>
+              <li><code>BarHistory.__getitem__</code> unwraps slicing from newest to oldest: <code>[Bar_T, Bar_{T-1}, Bar_{T-2}, ...]</code>.</li>
+              <li>Vectorized libraries (TA-Lib, NumPy, SciPy) assume arrays are chronological (index 0 = oldest).</li>
+              <li>When passed to TA-Lib or rolling filters, indicators calculate backwards in time: lagged indicators become leading filters, smoothing future bars into past values.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              Filters and rolling indicators inadvertently leak future price trends into current signals, giving strategies artificial predictive power.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE 11 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title-wrap">
+          <span class="issue-id">FWD-04</span>
+          <span class="issue-name">Timezone Over-Conversion Shift (5.5-Hour Cross-Session Contamination)</span>
+        </div>
+        <span class="badge badge-warning">High Risk Data Leak</span>
+      </div>
+      <div class="issue-body">
+        <div class="grid-2col">
+          <div class="desc-box">
+            <h4 class="danger-text">Root Cause & Structural Flaw</h4>
+            <p>
+              In <a href="file:///C:/Users/Rakesh/backtest/data_manager.py#L26-L31"><code>data_manager.py</code></a> (lines 26-31):
+            </p>
+            <ul>
+              <li>Unconditionally assumes all naive CSV timestamps are UTC and calls <code>.tz_localize('UTC').tz_convert('Asia/Kolkata')</code> (+5.5 hours).</li>
+              <li>If historical CSVs are already recorded in local Indian Standard Time (IST), the 09:15 AM market open is shifted to 02:45 PM.</li>
+              <li>Mixing local and UTC data causes afternoon data to be evaluated during the morning session.</li>
+            </ul>
+          </div>
+          <div class="desc-box">
+            <h4 class="warning-text">Quantitative & Risk Impact</h4>
+            <p>
+              A strategy running on shifted data sees price action hours before it occurred in real time, generating 100% lookahead bias across sessions.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REMEDIATION ROADMAP -->
+    <div class="section-title">
+      <div class="indicator indicator-info"></div>
+      Institutional Remediation Roadmap
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>Engine Component</th>
+            <th>Vulnerability</th>
+            <th>Remediation Standard</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-danger">Phase 1</span></td>
+            <td><code>broker.py</code> & <code>order.py</code></td>
+            <td>Short sale free cash injection & zero margin check</td>
+            <td>Implement Margin Account architecture: require Initial Margin (e.g. 50%), freeze cash collateral, track Maintenance Margin, trigger simulated margin calls.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-danger">Phase 1</span></td>
+            <td><code>data_manager.py</code></td>
+            <td>Dynamic universe purges active positions from cache</td>
+            <td>Retain market data for <code>current_universe &cup; {assets with open positions or active orders}</code>. Prevent eviction of active assets.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-danger">Phase 1</span></td>
+            <td><code>sizer.py</code></td>
+            <td>Fixed Risk Sizer divides by price instead of stop distance</td>
+            <td>Compute position size via $\frac{\text{NAV} \times \text{Risk\%}}{\vert\text{Entry} - \text{StopLoss}\vert}$. Base sizing on total portfolio equity.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">Phase 2</span></td>
+            <td><code>analyzer.py</code></td>
+            <td>MTM dropouts on missing ticks & intraday Sharpe deflation</td>
+            <td>Carry forward last close for missing ticks. Resample equity curve to Daily (EOD) frequency before computing annualized Sharpe; incorporate risk-free rate.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">Phase 2</span></td>
+            <td><code>analyzer.py</code></td>
+            <td>Breakeven trades stripped from Win Rate denominator</td>
+            <td>Add explicit <code>is_closed: bool</code> flag on <code>Trade</code>. Count all closing trades ($pnl \ge 0$ and $pnl < 0$) in win rate denominator.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-info">Phase 3</span></td>
+            <td><code>execution_model.py</code> & <code>slippage.py</code></td>
+            <td>Zero default slippage & 100% volume execution</td>
+            <td>Enforce maximum volume participation cap (e.g. 5-10% of bar volume). Implement square-root market impact slippage: $\text{Slip} = \gamma \sigma \sqrt{\frac{Q}{V}}$.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-info">Phase 3</span></td>
+            <td><code>commission.py</code> & <code>broker.py</code></td>
+            <td>Commission subsystem disconnection</td>
+            <td>Standardize commission interface across <code>Broker</code> and <code>Commission</code>; implement tiered bps + exchange fee structures.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      Institutional Quantitative Architecture Audit &bull; Generated for Quant Subdivision &bull; System: Backtesting Engine Core
+    </footer>
+
+  </div>
+</body>
+</html>

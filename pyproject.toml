@@ -1,7 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "backtesting"
+name = "backtester"
 version = "0.1.0"
-description = "Add your description here"
+description = "Institutional Event-Driven Backtesting Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,3 +15,6 @@ dependencies = [
     "ta-lib>=0.6.7",
     "tabulate>=0.9.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]

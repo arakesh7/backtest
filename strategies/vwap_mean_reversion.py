@@ -53,7 +53,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from strategy import Strategy  # noqa: E402
+from backtester import Strategy  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ class VWAPMeanReversionStrategy(Strategy):
         needed = self.atr_period + self.rsi_period + 5
         if hist.count < needed:
             return None, None
-        bars   = list(hist[:])
+        bars   = list(hist.chronological())
         closes = np.array([float(b[IDX_CLOSE]) for b in bars], dtype=float)
         highs  = np.array([float(b[IDX_HIGH])  for b in bars], dtype=float)
         lows   = np.array([float(b[IDX_LOW])   for b in bars], dtype=float)
@@ -215,7 +215,7 @@ class VWAPMeanReversionStrategy(Strategy):
         vol_surge = 0.0
         hist = self.bar_history[symbol]
         if hist.count >= self.vol_lookback:
-            volumes   = np.array([float(b[IDX_VOLUME]) for b in hist[:]], dtype=float)
+            volumes   = np.array([float(b[IDX_VOLUME]) for b in hist.chronological()], dtype=float)
             avg_vol   = float(np.mean(volumes[-self.vol_lookback:]))
             avg_or_vol = avg_vol * self.opening_range_minutes
             vol_surge = orb["volume"] / avg_or_vol if avg_or_vol > 0 else 1.0

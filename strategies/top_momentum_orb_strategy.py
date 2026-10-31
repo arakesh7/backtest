@@ -41,7 +41,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from strategy import Strategy  # noqa: E402
+from backtester import Strategy  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class TopMomentumORBStrategy(Strategy):
         vol_surge = 0.0
         hist = self.bar_history[symbol]
         if hist.count >= self.vol_lookback:
-            volumes = np.array([b[IDX_VOLUME] for b in hist[:]], dtype=float)
+            volumes = np.array([b[IDX_VOLUME] for b in hist.chronological()], dtype=float)
             avg_vol = (
                 np.mean(volumes[-self.vol_lookback :])
                 if len(volumes) >= self.vol_lookback

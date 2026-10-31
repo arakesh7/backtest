@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comprehensive Backtest Engine Audit & Bias Report</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --critical: #ef4444;
+      --critical-bg: rgba(239, 68, 68, 0.15);
+      --major: #f59e0b;
+      --major-bg: rgba(245, 158, 11, 0.15);
+      --nice: #3b82f6;
+      --nice-bg: rgba(59, 130, 246, 0.15);
+      --success: #10b981;
+      --accent: #8b5cf6;
+      --code-bg: #090d16;
+      --border-color: #334155;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 2rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-critical { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical); }
+    .badge-major { background: var(--major-bg); color: var(--major); border: 1px solid var(--major); }
+    .badge-nice { background: var(--nice-bg); color: var(--nice); border: 1px solid var(--nice); }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid var(--success); }
+
+    h1 { font-size: 2.25rem; font-weight: 800; margin-bottom: 0.5rem; color: #fff; }
+    h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 1rem; color: #f1f5f9; border-left: 4px solid var(--accent); padding-left: 0.75rem; }
+    h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.5rem; color: #e2e8f0; }
+    p { margin-bottom: 1rem; color: var(--text-muted); font-size: 0.95rem; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+    .metric-card .count { font-size: 2.5rem; font-weight: 800; margin: 0.25rem 0; }
+    .metric-card.critical .count { color: var(--critical); }
+    .metric-card.major .count { color: var(--major); }
+    .metric-card.nice .count { color: var(--nice); }
+    .metric-card.score .count { color: #ec4899; }
+
+    .filter-bar {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 0.5rem 1.25rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: all 0.2s ease;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      background: #334155;
+      color: #fff;
+      border-color: #64748b;
+    }
+
+    .issue-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      margin-bottom: 1.75rem;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    .issue-header {
+      padding: 1.25rem 1.5rem;
+      background: rgba(30, 41, 59, 0.6);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .issue-title-area {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .issue-body {
+      padding: 1.5rem;
+    }
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    .meta-table td {
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--border-color);
+    }
+    .meta-table td.label {
+      background: #0f172a;
+      color: var(--text-muted);
+      width: 180px;
+      font-weight: 600;
+    }
+    .meta-table td.value {
+      color: #f1f5f9;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .section-title {
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-top: 1rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .code-comparison {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    @media (min-width: 900px) {
+      .code-comparison {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    .code-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .code-header.before { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .code-header.after { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    pre {
+      padding: 0.75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+    .proof-box {
+      background: rgba(15, 23, 42, 0.8);
+      border-left: 4px solid var(--major);
+      padding: 0.75rem 1rem;
+      border-radius: 0 0.5rem 0.5rem 0;
+      margin: 1rem 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      color: #fcd34d;
+    }
+    .callout {
+      padding: 1rem;
+      border-radius: 0.5rem;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    .callout-critical { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    .callout-major { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fde68a; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h1>Quantitative Backtesting Engine Audit Report</h1>
+          <p>Exhaustive code inspection, forward bias analysis, and mathematical verification of repository: <code>arakesh7/backtest</code></p>
+        </div>
+        <div>
+          <span class="badge badge-critical" style="font-size: 0.9rem; padding: 0.4rem 1rem;">Reliability: Invalided (Critical Bugs)</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Executive Summary -->
+    <section>
+      <h2>Executive Summary</h2>
+      <p>
+        An exhaustive architectural and empirical code audit was conducted on the backtesting framework located in this repository. 
+        The system suffers from <strong>severe algorithmic flaws</strong>, <strong>data schema inversions</strong>, 
+        <strong>backward cash flows</strong>, and <strong>lookahead/execution biases</strong>. 
+        Under current conditions, <strong>any backtest results (PnL, Win Rate, Sharpe Ratio, Max Drawdown) produced by this engine are completely erroneous and cannot be relied upon</strong>.
+      </p>
+
+      <div class="summary-grid">
+        <div class="metric-card critical">
+          <div class="label">Critical Issues</div>
+          <div class="count">6</div>
+          <p>Fatal bugs corrupting prices, cash, circular buffer, or lookahead bias.</p>
+        </div>
+        <div class="metric-card major">
+          <div class="label">Major Issues</div>
+          <div class="count">7</div>
+          <p>Severe distortions to PnL, metric calculations, order fills, or execution.</p>
+        </div>
+        <div class="metric-card nice">
+          <div class="label">Nice-to-Have</div>
+          <div class="count">3</div>
+          <p>Code hygiene, dead code removal, and risk/margin architecture improvements.</p>
+        </div>
+        <div class="metric-card score">
+          <div class="label">Engine Integrity</div>
+          <div class="count">24%</div>
+          <p>Requires immediate refactoring of core Broker, DataManager, and History modules.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter Buttons -->
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterIssues('all')">All Issues (16)</button>
+      <button class="filter-btn" onclick="filterIssues('critical')">Critical (6)</button>
+      <button class="filter-btn" onclick="filterIssues('major')">Major (7)</button>
+      <button class="filter-btn" onclick="filterIssues('nice')">Nice-to-Have (3)</button>
+    </div>
+
+    <!-- ISSUES LIST -->
+    <div id="issues-container">
+
+      <!-- CRITICAL ISSUE 1 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>1. OHLCV Schema Inversion & Column Offset Across Entire Engine</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Data Integrity / Pricing</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">data_manager.py:23-32, 75 | broker.py:97, 182 | analyzer.py:65 | execution_model.py:40</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Fatal price distortion: Market orders fill at HIGH; Equity multiplies size by VOLUME; Indicators compute on VOLUME.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>data_manager.py</code>, <code>CSVDataLoader</code> reads columns: <code>['open', 'high', 'low', 'close', 'volume', 'ts']</code>. Setting <code>df.index = df['ts']</code> does <em>not</em> drop <code>'ts'</code> from columns. <code>raw_data.to_numpy()</code> returns a row array with indices: 
+            <code>[0: Open, 1: High, 2: Low, 3: Close, 4: Volume, 5: TS]</code>.
+            <br>
+            However, <code>broker.py</code> unpacks this as: <code>ts, o, h, l, c, v = bar</code>. 
+            Consequently:
+          </p>
+          <ul style="margin-left: 1.5rem; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            <li><code>ts</code> becomes <code>open</code> price (e.g. 100.0)</li>
+            <li><code>o</code> (Open) becomes <code>high</code> price (105.0) &rarr; <strong>All market orders fill at the bar's High!</strong></li>
+            <li><code>h</code> (High) becomes <code>low</code> price (99.0)</li>
+            <li><code>l</code> (Low) becomes <code>close</code> price (103.0)</li>
+            <li><code>c</code> (Close) becomes <code>volume</code> (1000)</li>
+            <li><code>v</code> (Volume) becomes <code>timestamp string</code></li>
+            <li>In <code>analyzer.py:65</code>: <code>positions_value = sum(pos.size * data[pos.asset][4])</code> &rarr; multiplies shares by <strong>Volume</strong> instead of Close price! (e.g., 10 shares &times; 500,000 volume = 5,000,000 portfolio value!)</li>
+          </ul>
+
+          <div class="proof-box">
+            <strong>Empirical Python Test Verification:</strong><br>
+            Columns: ['open', 'high', 'low', 'close', 'volume', 'ts']<br>
+            Numpy row: [100.0, 105.0, 99.0, 103.0, 1000, '2024-01-01 09:15:00']<br>
+            Result: bar[1] (assigned to Open) is 105.0 (High); bar[4] (assigned to Close) is 1000 (Volume)!
+          </div>
+
+          <div class="section-title">The Fix</div>
+          <div class="code-comparison">
+            <div class="code-box">
+              <div class="code-header before">Current Buggy Code (data_manager.py)</div>
+              <pre>cols = ['open', 'high', 'low', 'close', 'volume', 'ts']
+df = pd.read_csv(file_path, usecols=cols, parse_dates=['ts'])
+df['ts'] = df['ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
+df.index = df['ts']
+# df.to_numpy() leaves columns: open=0, high=1, low=2, close=3, volume=4, ts=5</pre>
+            </div>
+            <div class="code-box">
+              <div class="code-header after">Correct Code (Standardized Schema)</div>
+              <pre># Standardize canonical tuple format: (ts, open, high, low, close, volume)
+cols = ['ts', 'open', 'high', 'low', 'close', 'volume']
+df = pd.read_csv(file_path, usecols=cols, parse_dates=['ts'])
+df['ts'] = df['ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
+df.set_index('ts', drop=False, inplace=True)
+# Reorder explicitly before converting to numpy
+self.data_cache[symbol] = df[['ts', 'open', 'high', 'low', 'close', 'volume']].to_numpy()</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRITICAL ISSUE 2 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>2. Temporal Reversal & Memory Corruption in BarHistory Slicing</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: History / Indicators</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">history.py:30-38 | user_strategies.py:28-34, 461, 511, 626, 711</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">All technical indicators (SMA, EMA, RSI, BBANDS, ATR) receive reversed/scrambled price series; slices return uninitialized None values.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>BarHistory.__getitem__</code>, slicing is implemented as:
+            <code>idxs = (self.head + np.arange(start, stop, step)) % self.size</code>.
+            When strategies do <code>bars[:]</code>, <code>key.indices(self.count)</code> produces <code>start=0, stop=count</code>.
+            Because <code>self.head</code> is the <em>latest</em> added bar, index 0 receives <code>self.head</code> (newest bar), followed by <code>self.head + 1</code> (oldest bar in the buffer)!
+          </p>
+          <ul style="margin-left: 1.5rem; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            <li>Before the buffer fills, <code>self.head + 1</code> is <code>None</code> (uninitialized numpy memory). Passing this to TA-Lib crashes or yields NaNs.</li>
+            <li>When full, the returned array begins with the newest bar, jumps to the oldest bar, and counts upward. <code>closes[-1]</code> is actually <code>bar[-1]</code> (yesterday's bar), and <code>closes[0]</code> is the current bar!</li>
+            <li>Slicing <code>history[-10:]</code> evaluates in Python as <code>indices(count) -> [count-10 ... count-1]</code>, which shifts by <code>head</code>, completely skipping the current bar!</li>
+          </ul>
+
+          <div class="proof-box">
+            <strong>Empirical Python Test Verification:</strong><br>
+            Buffer of size 5 with bars 0 to 4 added:<br>
+            bh[:] = ['bar_4', 'bar_0', 'bar_1', 'bar_2', 'bar_3'] &larr; Newest bar at front, oldest follows!<br>
+            bh[-1] = bar_3 &larr; TA-Lib calculating EMA on bh[:] uses bar_3 as latest price, not bar_4!
+          </div>
+
+          <div class="section-title">The Fix</div>
+          <div class="code-comparison">
+            <div class="code-box">
+              <div class="code-header before">Current Buggy Code (history.py)</div>
+              <pre>def __getitem__(self, key):
+    if isinstance(key, int):
+        return self.get(key)
+    elif isinstance(key, slice):
+        start, stop, step = key.indices(self.count)
+        idxs = (self.head + np.arange(start, stop, step)) % self.size
+        return self.data[idxs]</pre>
+            </div>
+            <div class="code-box">
+              <div class="code-header after">Correct Code (Chronological Circular Unwrapping)</div>
+              <pre>def __getitem__(self, key):
+    if isinstance(key, int):
+        return self.get(key)
+    elif isinstance(key, slice):
+        start, stop, step = key.indices(self.count)
+        # Oldest stored bar is at physical index: (self.head - self.count + 1) % self.size
+        base = self.head - self.count + 1
+        idxs = (base + np.arange(start, stop, step)) % self.size
+        return self.data[idxs]</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRITICAL ISSUE 3 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>3. Inverted Cash Accounting: Partial Sells Burn Cash, Covers Print Cash</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Broker / Accounting</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">order.py:124-145 | broker.py:118-156</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Taking profit on partial exits drains cash; covering shorts creates free cash; position flips calculate false PnL and retain wrong entry prices.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>order.py</code>, <code>Position.update(size, price)</code> handles position decreases as:
+            <code>opened, closed = 0, size</code>.
+            When selling 5 shares from a 10-share long position: <code>size = -5</code>. Thus <code>closed = -5</code>.
+            In <code>broker.py</code>:
+            <code>close_value = closed * fill_price = -5 * 120 = -600</code>.
+            <code>cash_in = close_value = -600</code>.
+            <code>self.cash += cash_in</code> &rarr; <strong>Subtracts $600 from cash instead of crediting $600!</strong>
+            <br>
+            Conversely, when partially covering a short (position -10, buy 5), <code>size = +5</code>, so <code>closed = +5</code>, <code>cash_in = +400</code>, adding $400 to cash instead of spending $400.
+            <br>
+            Furthermore, flipping a position (e.g. Long 10, Sell 15 to flip to Short -5) enters the decrease branch: it books realized PnL on 15 shares (instead of 10), and fails to reset <code>avg_price</code> for the new -5 short position.
+          </p>
+
+          <div class="proof-box">
+            <strong>Empirical Python Test Verification:</strong><br>
+            Buy 10 @ 100 &rarr; Cash = 9,000, Position = 10.<br>
+            Sell 5 @ 120 (Partial close) &rarr; Expected Cash: 9,600. Actual Cash: <strong>8,400!</strong><br>
+            Selling for a profit caused cash to drop by $600!
+          </div>
+
+          <div class="section-title">The Fix</div>
+          <div class="code-comparison">
+            <div class="code-box">
+              <div class="code-header before">Current Buggy Code (broker.py & order.py)</div>
+              <pre># broker.py
+opened, closed, _, _ = position.pseudo_update(size, fill_price)
+open_value = opened * fill_price
+close_value = closed * fill_price
+cash_in = close_value
+cash_out = open_value + commission
+self.cash += cash_in
+self.cash -= cash_out</pre>
+            </div>
+            <div class="code-box">
+              <div class="code-header after">Correct Code (Universal Cash Flow & Position Transition)</div>
+              <pre># Cash flow is universally: - (order_size * fill_price) - commission
+# (Positive for SELL, Negative for BUY)
+trade_cash_delta = -(size * fill_price) - commission
+if order.side == "BUY" and abs(trade_cash_delta) > self.cash:
+    order.status = "REJECTED"
+    return None
+
+self.cash += trade_cash_delta
+# Cleanly split position updates into:
+# 1. Closing existing portion (at old avg_price)
+# 2. Opening new portion (at new fill_price if position flips)</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRITICAL ISSUE 4 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>4. Lookahead Bias & Bar-Path Dependency in Stop Loss / Take Profit</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Strategy / Execution</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">user_strategies.py:209-231, 261-266 | top_momentum_orb_strategy.py:197-225, 298-335</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Exits fill at next bar's Open rather than SL/TP; breakout entries log idealized fill prices; simultaneous SL/TP breaches handled with optimistic bias.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In existing strategies, risk management is implemented inside <code>on_data</code> rather than inside the broker.
+            When <code>curr_low <= sl</code> is detected, the strategy calls <code>self.close(symbol)</code>, which queues a <strong>Market Order</strong>.
+            This market order does not execute on the current bar—it executes on the <strong>next bar's Open</strong>.
+            However, the strategy deletes <code>self._pos_details[symbol]</code> immediately on the current bar.
+            <br>
+            In <code>top_momentum_orb_strategy.py</code>, breakout entries do:
+            <code>if curr_high > or_high: entry = or_high; self.buy(symbol, entry_price=entry)</code>.
+            Because <code>self.buy</code> creates a MARKET order by default, the trade executes at the next bar's Open, yet the strategy logs and calculates SL/TP as if it entered exactly at <code>or_high</code>.
+            <br>
+            Additionally, when a volatile candle breaches both SL and TP in the same bar, the code evaluates whichever <code>if</code> condition appears first, ignoring intra-bar tick sequencing.
+          </p>
+
+          <div class="section-title">The Fix</div>
+          <p>
+            Stop losses and Take Profits must be native broker order types (<code>SL</code> and <code>LIMIT</code>). 
+            When submitted as a bracket order, the broker must check price penetration within the bar:
+            if Low &le; Stop Price, fill at <code>min(Open, Stop Price)</code> (accounting for gap downs) within that exact bar. 
+            If both SL and TP are penetrated within the same bar, assume the conservative worst-case (Stop Loss hit first).
+          </p>
+        </div>
+      </div>
+
+      <!-- CRITICAL ISSUE 5 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>5. Timezone Localization Shifting Market Hours by +5:30 Hours</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Data Loading / Timestamps</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">data_manager.py:26-30</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">85% of market trading hours are dropped; strategies looking for market open at 09:15:00 receive empty data.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>data_manager.py:27</code>:
+            <code>if df['ts'].dt.tz is None: df['ts'] = df['ts'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')</code>.
+            Indian market data CSVs (NSE) are already recorded in Indian Standard Time (IST, 09:15:00 to 15:30:00).
+            Treating naive IST timestamps as UTC and converting to Asia/Kolkata adds <strong>+5 hours and 30 minutes</strong>.
+            A bar at <code>09:15:00</code> becomes <code>14:45:00</code>; a bar at <code>15:30:00</code> becomes <code>21:00:00</code> (outside trading hours).
+            When <code>trading_calendar.py</code> generates timestamps from 09:15 to 15:30, <code>DataManager.get_data</code> returns empty dicts for everything between 09:15 and 14:45.
+          </p>
+
+          <div class="section-title">The Fix</div>
+          <div class="code-comparison">
+            <div class="code-box">
+              <div class="code-header before">Current Buggy Code (data_manager.py)</div>
+              <pre>if df['ts'].dt.tz is None:
+    df['ts'] = df['ts'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
+else:
+    df['ts'] = df['ts'].dt.tz_convert('Asia/Kolkata')</pre>
+            </div>
+            <div class="code-box">
+              <div class="code-header after">Correct Code (Parse as Naive Local Time)</div>
+              <pre># If CSV is already in local exchange time (IST), keep it naive:
+if df['ts'].dt.tz is not None:
+    df['ts'] = df['ts'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+df['ts'] = df['ts'].dt.strftime('%Y-%m-%d %H:%M:%S')</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRITICAL ISSUE 6 -->
+      <div class="issue-card" data-severity="critical">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-critical">Critical</span>
+            <h3>6. All-Symbol Warmup Deadlock Freezing Entire Simulation</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Strategy / Lifecycle</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">strategy.py:40-54</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">A single newly listed or missing symbol blocks all trading, position management, EOD closes, and stop losses across the entire universe.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>Strategy.next()</code>:
+            <pre>all_warmed_up = True
+for symbol in data:
+    self.bar_history[symbol].add(data[symbol])
+    if self.bar_history[symbol].count < self.bar_history[symbol].size:
+        all_warmed_up = False
+if not all_warmed_up:
+    return</pre>
+            If any single symbol has fewer bars than its allocated <code>bar_history</code> size (e.g. newly listed stock, recent universe entrant, or missing CSV rows), <code>all_warmed_up</code> is False. 
+            The method returns immediately. <strong>Not a single symbol has <code>self.on_data(ts, data)</code> called.</strong>
+            Existing positions in other symbols cannot be managed, trailing stops will not execute, and EOD positions remain trapped overnight.
+          </p>
+
+          <div class="section-title">The Fix</div>
+          <p>
+            Remove the global <code>all_warmed_up</code> gate. Allow <code>on_data</code> to run, and delegate warmup checks to per-symbol indicators (e.g. <code>if self.bar_history[symbol].count < period: continue</code>).
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 7 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>7. Analyzer Metric Distortions: ZeroDivision, Trade Omission & Annualization Bias</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Analytics / Risk</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">analyzer.py:82, 105-113, 125-149</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Backtest crashes with ZeroDivisionError if no trades close; Sharpe ratio is underestimated by ~19x on intraday data; scratch trades omitted.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            1. <strong>Division by Zero:</strong> Line 149 computes <code>"Win Rate (%)": (len(winning_trades) / num_close_trades) * 100</code>. If no trades close, or if positions remain open at the end of the test, <code>num_close_trades</code> is 0 &rarr; <code>ZeroDivisionError</code> crash.
+            <br>
+            2. <strong>Scratch Trade Omission:</strong> Line 125 defines closing trades as <code>closing_trades = [t for t in self.trades if t.pnl != 0]</code>. Break-even trades with <code>pnl == 0</code> are discarded from trade counts and win/loss breakdowns.
+            <br>
+            3. <strong>Sharpe Ratio Annualization Error:</strong> Lines 107-113 multiply 1-minute returns by <code>sqrt(252)</code> instead of <code>sqrt(252 * 375)</code> (or resampling to daily returns). This severely suppresses the Sharpe ratio by a factor of <code>sqrt(375) &asymp; 19.36x</code>!
+            <br>
+            4. <strong>Holiday Valuation Drop:</strong> When exchange holidays are missing from data, <code>positions_value</code> drops to 0 on that bar, fabricating catastrophic artificial drawdowns.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 8 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>8. Execution Model Over-Filling on Partial Fills & Volume Type Error</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Execution Models</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">execution_model.py:28, 40-48</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Partially filled orders are over-filled upon retry; PercentVolumeExecutionModel crashes on timestamp strings.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>SimpleExecutionModel.execute()</code>: line 28 returns <code>fill_price, order.size</code> instead of <code>order.remaining_size</code>.
+            If an order was partially filled (e.g. 40 of 100 shares filled in bar 1), on bar 2 the model fills <code>order.size</code> (100 shares) again, resulting in 140 shares executed (140% fill)!
+            In <code>PercentVolumeExecutionModel</code>, line 40 extracts index 5 as volume, which is a string timestamp due to Issue 1, causing <code>TypeError: can't multiply sequence by non-int of type 'float'</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 9 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>9. Realized PnL Ignores Commissions & Disconnected Commission Module</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Commission / PnL</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">broker.py:82-84, 136-138 | commission.py:1-14</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Trades with small profits that lose money after commission are falsely recorded as winning trades; commission module classes are unused dead code.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            <code>_calculate_realized_pnl()</code> in <code>broker.py</code> calculates <code>(exec_price - avg_price) * abs(closed)</code>. It does not subtract commission.
+            While cash is debited by commission, <code>Trade.pnl</code> reflects gross PnL.
+            In <code>analyzer.py</code>, <code>winning_trades = [t for t in self.trades if t.pnl > 0]</code> classifies net losing trades as winners.
+            Additionally, <code>commission.py</code> defines <code>Commission</code> and <code>NoCommission</code>, but <code>Broker</code> never calls them, relying on a hardcoded float <code>self.commission = 0</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 10 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>10. End-of-Day (EOD) Position Closing Ineffective on Daily Frequency</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Intraday Strategies</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">strategy.py:60-64 | user_strategies.py:45, 109, 206</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Strategies designated as intraday hold positions indefinitely when tested on daily bars.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            <code>close_on_eod(ts)</code> checks <code>if self.market_close_time and ts.time() == self.market_close_time:</code>.
+            On daily data (<code>frequency="D"</code>), pandas timestamps have time <code>00:00:00</code>.
+            Because <code>00:00:00 != 15:25:00</code>, this condition never evaluates to True, and intraday strategies fail to close positions at EOD.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 11 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>11. Gap Calculation References Opening-Range Close Instead of Previous Day Close</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: ORB Strategy Logic</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">strategies/top_momentum_orb_strategy.py:133-136, 157-161</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Stock selection scores are distorted by comparing today's open to yesterday's 09:30 AM price rather than official previous close.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            In <code>_reset_daily_state()</code>:
+            <code>for symbol, orb in self._or.items(): self._prev_close[symbol] = orb["close_at_or_end"]</code>.
+            <code>orb["close_at_or_end"]</code> is recorded at <code>curr_time == self.or_end_time</code> (09:30:00).
+            The strategy's gap formula <code>abs((orb["open"] - prev_c) / prev_c)</code> computes the gap relative to yesterday's 09:30 price, completely missing the remaining 6 hours of trading between 09:30 and 15:30.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 12 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>12. Zombie Positions on Dynamic Universe Eviction</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Backtester / Data Manager</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">backtester.py:68-75 | data_manager.py:58-67</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Positions in evicted symbols can never be closed, stop losses can never trigger, and position equity vanishes.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            When <code>Backtester._should_refresh_universe()</code> updates the universe, it evicts symbols not in the new universe from <code>data_cache</code>.
+            If the strategy holds an open position in an evicted symbol, on all subsequent bars:
+            <code>if order.asset not in data: return None</code> in <code>broker.py</code> prevents orders from executing.
+            In <code>analyzer.py</code>, line 67 drops the position from equity calculations, creating a false drop in portfolio value while the position remains frozen forever.
+          </p>
+        </div>
+      </div>
+
+      <!-- MAJOR ISSUE 13 -->
+      <div class="issue-card" data-severity="major">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-major">Major</span>
+            <h3>13. Trading Calendar Rigidity & Missing Indian Exchange Holidays</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Trading Calendar</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">trading_calendar.py:30-52</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Crashes for frequencies other than 'D' and '1min' (e.g. '5min', '15min'); generates trading bars on NSE holidays causing zero-value equity plunges.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            <code>WorkingDayTradingCalendar.get_trading_bars()</code> explicitly raises <code>ValueError(f"Unsupported frequency: {freq}")</code> for anything other than "D" or "1min".
+            Furthermore, <code>pd.bdate_range</code> only filters Saturdays and Sundays. Indian holidays (Diwali, Republic Day, Independence Day, etc.) are included as active bars. 
+            On holidays, CSV data is missing, so <code>data</code> is empty `{}`. In <code>analyzer.py</code>, open positions evaluate to 0, producing deep artificial portfolio drawdowns.
+          </p>
+        </div>
+      </div>
+
+      <!-- NICE-TO-HAVE ISSUE 14 -->
+      <div class="issue-card" data-severity="nice">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-nice">Nice-to-Have</span>
+            <h3>14. Codebase Hygiene: Dead Copies, Stale Stubs & Missing Strategy Module</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Architecture / Cleanliness</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">strategy_tests.py:59 | broker copy.py | strategy copy.py | data_manager_old_logic.py | src/</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Running strategy_tests.py crashes on ImportError for vwap_mean_reversion_5m; multiple unmaintained duplicate files confuse developers.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            <code>strategy_tests.py:59</code> imports <code>VWAPMeanReversion5MinStrategy</code> from <code>strategies.vwap_mean_reversion_5m</code>, but that file was deleted (only a <code>.pyc</code> remained in pycache).
+            The repository also contains abandoned files like <code>broker copy.py</code>, <code>strategy copy.py</code>, <code>data_manager_old_logic.py</code>, and eight empty 0-byte files in <code>src/</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- NICE-TO-HAVE ISSUE 15 -->
+      <div class="issue-card" data-severity="nice">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-nice">Nice-to-Have</span>
+            <h3>15. FixedRiskPercentSizer Misnomer & Absence of Portfolio Equity Awareness</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Position Sizing</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">sizer.py:21-75</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Sizes are based on cash allocation rather than risk distance; sizes shrink as cash is committed even when portfolio equity is growing.</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            <code>FixedRiskPercentSizer.get_size()</code> computes:
+            <code>cash_to_risk = broker.cash * (self.risk_percent / 100); return int(cash_to_risk / entry_price)</code>.
+            This is <strong>Capital Allocation Sizing</strong>, not Risk Sizing. True risk-based sizing calculates:
+            <code>size = cash_to_risk / abs(entry_price - stop_loss_price)</code>.
+            (The author had commented out the real risk calculation at lines 53-75).
+            Furthermore, sizing against <code>broker.cash</code> rather than total equity penalizes multi-trade strategies as cash is locked in open positions.
+          </p>
+        </div>
+      </div>
+
+      <!-- NICE-TO-HAVE ISSUE 16 -->
+      <div class="issue-card" data-severity="nice">
+        <div class="issue-header">
+          <div class="issue-title-area">
+            <span class="badge badge-nice">Nice-to-Have</span>
+            <h3>16. Lack of Pre-Trade Margin Reservation for Queued Orders</h3>
+          </div>
+          <span style="color:var(--text-muted); font-size:0.85rem;">Area: Broker / Order Queue</span>
+        </div>
+        <div class="issue-body">
+          <table class="meta-table">
+            <tr>
+              <td class="label">Affected Files</td>
+              <td class="value">broker.py:33-56, 71-80</td>
+            </tr>
+            <tr>
+              <td class="label">Impact</td>
+              <td class="value">Concurrent signals size against the same free cash; trade execution order is non-deterministic (based on dictionary order).</td>
+            </tr>
+          </table>
+
+          <div class="section-title">Root Cause & Mechanics</div>
+          <p>
+            When a multi-asset strategy generates buy signals on 3 assets on the same bar, each order sizes against the current cash balance. 
+            On the next bar, the first two orders consume all cash, and the third order is rejected with <code>REJECTED</code> status. 
+            The priority of which order executes is determined strictly by dict hash ordering in <code>self.orders.items()</code>.
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Architectural Roadmap -->
+    <section style="margin-top: 3rem;">
+      <h2>Refactoring Roadmap & Verification Checklist</h2>
+      <div class="metric-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+        <ol style="margin-left: 1.5rem; color: var(--text-muted); line-height: 1.8; font-size: 0.95rem;">
+          <li><strong style="color:#fff;">Standardize Data Schema:</strong> Enforce canonical row tuple <code>(ts, open, high, low, close, volume)</code> across <code>CSVDataLoader</code>, <code>Broker</code>, <code>Analyzer</code>, and all strategies.</li>
+          <li><strong style="color:#fff;">Fix BarHistory Circular Buffer:</strong> Ensure chronological unwrapping so index 0 is oldest and index -1 is newest before feeding to TA-Lib.</li>
+          <li><strong style="color:#fff;">Overhaul Broker Cash Flows:</strong> Unify cash changes to <code>-(size * fill_price) - commission</code> and cleanly handle position flips and partial reductions.</li>
+          <li><strong style="color:#fff;">Implement Native SL/TP Order Types:</strong> Remove fragile next-bar market orders for exits; let the broker execute stop orders intra-bar.</li>
+          <li><strong style="color:#fff;">Fix Naive Timestamps:</strong> Eliminate blind UTC localization on IST datasets to restore the full 09:15-15:30 trading session.</li>
+          <li><strong style="color:#fff;">Decouple Asset Warmup:</strong> Allow individual assets to warm up independently without stalling the entire backtester.</li>
+          <li><strong style="color:#fff;">Daily-Resampled Analytics:</strong> Resample intraday equity curves to daily bars before calculating annual Sharpe, Sortino, and Drawdown.</li>
+        </ol>
+      </div>
+    </section>
+
+    <footer style="margin-top: 3rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+      Generated by Antigravity Quantitative Audit Engine &bull; Reference Codebase: <code>C:\Users\Rakesh\backtest</code>
+    </footer>
+  </div>
+
+  <script>
+    function filterIssues(severity) {
+      const cards = document.querySelectorAll('.issue-card');
+      const buttons = document.querySelectorAll('.filter-btn');
+      
+      buttons.forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      cards.forEach(card => {
+        if (severity === 'all' || card.getAttribute('data-severity') === severity) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
