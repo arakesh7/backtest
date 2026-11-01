@@ -27,12 +27,16 @@ class Backtester:
         universe_fn=None,
         analyzers=None,
         data_dir=None,
+        data_loader=None,
+        data_manager=None,
         intra_bar_fill_model: str = "CONSERVATIVE",
     ):
         """
         :param start_date: Start date as 'YYYY-MM-DD'
         :param end_date: End date as 'YYYY-MM-DD'
         :param frequency: Frequency string (e.g., 'D' for daily, 'W' for weekly, '1min' for minutely)
+        :param data_loader: Optional BaseDataLoader instance (e.g. QDataLoader, CSVDataLoader)
+        :param data_manager: Optional DataManager instance
         :param intra_bar_fill_model: 'CONSERVATIVE' (Prudential Stop-Loss Priority, default) or 'POLARITY' (Candle Polarity Trajectory)
         """
         self.start_date = pd.to_datetime(start_date)
@@ -40,7 +44,12 @@ class Backtester:
         self.frequency = frequency
         self.trading_calendar = WorkingDayTradingCalendar()
         self.strategy = strategy
-        self.data_manager = DataManager(CSVDataLoader(data_dir=data_dir or r"G:\backtest_data"))
+        if data_manager is not None:
+            self.data_manager = data_manager
+        elif data_loader is not None:
+            self.data_manager = DataManager(data_loader)
+        else:
+            self.data_manager = DataManager(CSVDataLoader(data_dir=data_dir or r"G:\backtest_data"))
         self.universe_fn = universe_fn
         self.universe_refresh_interval = timedelta(days=2)  # Default refresh interval
         self.last_refresh_time = None
